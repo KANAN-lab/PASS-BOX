@@ -13,12 +13,14 @@ export function exportLogsToExcel(logs: PassBoxLog[], filenamePrefix = 'Laporan_
     ['LAPORAN OPERASIONAL PASS BOX LOG - DEPARTEMEN RMPM'],
     [`Tanggal Ekspor: ${exportTimeStr}  |  Total Data: ${logs.length} Baris`],
     [], // Blank line
-    ['NO', 'NO PRO', 'TANGGAL DOKUMEN', 'KETERANGAN / NOMOR PASS BOX', 'DIINPUT OLEH', 'WAKTU INPUT SISTEM'],
+    ['NO', 'TIPE PRO', 'NO PRO', 'TANGGAL DOKUMEN', 'PILIHAN PASS BOX', 'DIINPUT OLEH', 'WAKTU INPUT SISTEM'],
   ];
 
   logs.forEach((log, idx) => {
+    const kat = log.kategori_pro || (log.pass_box.toLowerCase().includes('pm') ? 'PM' : 'RM');
     detailAoa.push([
       idx + 1,
+      kat,
       log.no_pro,
       formatDateIndo(log.tanggal),
       log.pass_box,
@@ -28,23 +30,24 @@ export function exportLogsToExcel(logs: PassBoxLog[], filenamePrefix = 'Laporan_
   });
 
   detailAoa.push([]);
-  detailAoa.push(['', 'TOTAL CATATAN DOKUMEN', logs.length, '', '', '']);
+  detailAoa.push(['', '', 'TOTAL CATATAN DOKUMEN', logs.length, '', '', '']);
 
   const wsDetail = XLSX.utils.aoa_to_sheet(detailAoa);
 
   wsDetail['!cols'] = [
     { wch: 6 },  // NO
+    { wch: 12 }, // TIPE PRO
     { wch: 22 }, // NO PRO
     { wch: 18 }, // TANGGAL DOKUMEN
-    { wch: 38 }, // KETERANGAN / PASS BOX
+    { wch: 25 }, // PILIHAN PASS BOX
     { wch: 24 }, // DIINPUT OLEH
     { wch: 22 }, // WAKTU SISTEM
   ];
 
   wsDetail['!merges'] = [
-    { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
-    { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 5 } },
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 6 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 6 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 6 } },
   ];
 
   XLSX.utils.book_append_sheet(workbook, wsDetail, 'Data Detail Pass Box');

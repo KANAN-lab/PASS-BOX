@@ -38,6 +38,7 @@ create table public.profiles (
 -- 6. Buat Tabel Pass Box Logs (Data Input Pass Box)
 create table public.pass_box_logs (
   id bigint generated always as identity primary key,
+  kategori_pro text not null default 'RM', -- 'RM' atau 'PM'
   no_pro text not null,
   tanggal date not null default current_date,
   pass_box text not null,
@@ -46,6 +47,23 @@ create table public.pass_box_logs (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Jika tabel pass_box_logs sudah ada sebelumnya, pastikan kolom kategori_pro ditambahkan
+alter table public.pass_box_logs add column if not exists kategori_pro text default 'RM';
+
+-- 6b. Tabel Master Pilihan Pass Box (Dikonfigurasi oleh Admin)
+create table if not exists public.pass_boxes (
+  id serial primary key,
+  name text not null unique,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+-- Seed awal pilihan Pass Box 1 & Pass Box 2
+insert into public.pass_boxes (name, is_active)
+values ('Pass Box 1', true), ('Pass Box 2', true)
+on conflict (name) do update set is_active = excluded.is_active;
+
 
 -- 7. Indexes untuk Kecepatan Query, Sort & Filter
 create index idx_pass_box_logs_tanggal on public.pass_box_logs(tanggal desc);
@@ -206,8 +224,28 @@ create policy "Allow delete pass_box_logs"
   on public.pass_box_logs for delete
   using (true);
 
+-- Policies untuk PASS_BOXES:
+alter table public.pass_boxes enable row level security;
+create policy "Allow read pass_boxes"
+  on public.pass_boxes for select
+  using (true);
+
+create policy "Allow insert pass_boxes"
+  on public.pass_boxes for insert
+  with check (true);
+
+create policy "Allow update pass_boxes"
+  on public.pass_boxes for update
+  using (true);
+
+create policy "Allow delete pass_boxes"
+  on public.pass_boxes for delete
+  using (true);
+
 -- 13. Enable Supabase Realtime
 alter publication supabase_realtime add table public.pass_box_logs;
+alter publication supabase_realtime add table public.pass_boxes;
+
 
 -- 14. Seed Data Akun Default (Password terenkripsi Bcrypt):
 --   cheker1 : checker123

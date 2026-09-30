@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import type { PassBoxLog } from '../types';
+import type { PassBoxLog, KategoriPro, PassBoxMaster } from '../types';
 import { StatCard } from './StatCard';
 import { EditLogModal } from './EditLogModal';
 import { exportLogsToExcel, formatDateIndo } from '../utils/excel';
@@ -16,7 +16,9 @@ import {
   Calendar,
   Box,
   User,
-  X
+  X,
+  CheckCircle2,
+  Tag
 } from 'lucide-react';
 
 export const DataTab: React.FC = () => {
@@ -27,15 +29,24 @@ export const DataTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [dbError, setDbError] = useState<string | null>(null);
 
+  // Master Pass Box state
+  const [availablePassBoxes, setAvailablePassBoxes] = useState<PassBoxMaster[]>([
+    { id: 1, name: 'Pass Box 1', is_active: true },
+    { id: 2, name: 'Pass Box 2', is_active: true },
+  ]);
+
   // Form inputs
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const [kategoriPro, setKategoriPro] = useState<KategoriPro | ''>(''); // Wajib pilih dulu
   const [noPro, setNoPro] = useState('');
   const [tanggal, setTanggal] = useState(todayStr);
-  const [passBox, setPassBox] = useState('');
+  const [passBox, setPassBox] = useState('Pass Box 1'); // Pilihan OOP
   const [submitting, setSubmitting] = useState(false);
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterKategori, setFilterKategori] = useState<'ALL' | 'RM' | 'PM'>('ALL');
+  const [filterPassBox, setFilterPassBox] = useState<string>('ALL');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
@@ -43,6 +54,35 @@ export const DataTab: React.FC = () => {
   const [editingLog, setEditingLog] = useState<PassBoxLog | null>(null);
 
   const noProInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch active pass boxes
+  const fetchPassBoxes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('pass_boxes')
+        .select('*')
+        .eq('is_active', true)
+        .order('id', { ascending: true });
+
+      if (!error && data && data.length > 0) {
+        setAvailablePassBoxes(data);
+        if (!passBox || !data.some(p => p.name === passBox)) {
+          setPassBox(data[0].name);
+        }
+      } else {
+        const local = localStorage.getItem('local_pass_boxes');
+        if (local) {
+          const parsed: PassBoxMaster[] = JSON.parse(local).filter((p: PassBoxMaster) => p.is_active);
+          if (parsed.length > 0) {
+            setAvailablePassBoxes(parsed);
+            if (!passBox) setPassBox(parsed[0].name);
+          }
+        }
+      }
+    } catch {
+      // fallback
+    }
+  };
 
   // Load initial logs
   const fetchLogs = async () => {
@@ -60,12 +100,11 @@ export const DataTab: React.FC = () => {
         if (local) {
           setLogs(JSON.parse(local));
         } else {
-          // Initial demo data matching screenshots
           const initialMock: PassBoxLog[] = [
-            { id: 4, no_pro: 'Contoh', tanggal: '2026-09-30', pass_box: '1', user_id: '11111111-1111-1111-1111-111111111111', user_name: 'Cheker 1', created_at: '2026-09-30T10:19:00Z' },
-            { id: 3, no_pro: '1059555', tanggal: '2026-09-30', pass_box: 'asbox 1 PM fani', user_id: '11111111-1111-1111-1111-111111111111', user_name: 'Cheker 1', created_at: '2026-09-30T10:18:00Z' },
-            { id: 2, no_pro: 'contoh1', tanggal: '2026-09-30', pass_box: '1 PM', user_id: '22222222-2222-2222-2222-222222222222', user_name: 'Admin', created_at: '2026-09-30T10:14:00Z' },
-            { id: 1, no_pro: '105999', tanggal: '2026-09-30', pass_box: 'pasbox 1. PM', user_id: '11111111-1111-1111-1111-111111111111', user_name: 'Cheker 1', created_at: '2026-09-30T10:10:00Z' },
+            { id: 4, kategori_pro: 'RM', no_pro: 'Contoh', tanggal: '2026-09-30', pass_box: 'Pass Box 1', user_id: '11111111-1111-1111-1111-111111111111', user_name: 'Cheker 1', created_at: '2026-09-30T10:19:00Z' },
+            { id: 3, kategori_pro: 'PM', no_pro: '1059555', tanggal: '2026-09-30', pass_box: 'Pass Box 2', user_id: '11111111-1111-1111-1111-111111111111', user_name: 'Cheker 1', created_at: '2026-09-30T10:18:00Z' },
+            { id: 2, kategori_pro: 'RM', no_pro: 'contoh1', tanggal: '2026-09-30', pass_box: 'Pass Box 1', user_id: '22222222-2222-2222-2222-222222222222', user_name: 'Admin', created_at: '2026-09-30T10:14:00Z' },
+            { id: 1, kategori_pro: 'PM', no_pro: '105999', tanggal: '2026-09-30', pass_box: 'Pass Box 1', user_id: '11111111-1111-1111-1111-111111111111', user_name: 'Cheker 1', created_at: '2026-09-30T10:10:00Z' },
           ];
           setLogs(initialMock);
           localStorage.setItem('local_pass_box_logs', JSON.stringify(initialMock));
@@ -83,32 +122,46 @@ export const DataTab: React.FC = () => {
 
   useEffect(() => {
     fetchLogs();
+    fetchPassBoxes();
 
-    // Supabase Realtime Subscription
-    const channel = supabase
-      .channel('pass_box_realtime')
+    // Supabase Realtime Subscriptions
+    const logsChannel = supabase
+      .channel('pass_box_realtime_logs')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pass_box_logs' }, () => {
         fetchLogs();
       })
       .subscribe();
 
+    const pbChannel = supabase
+      .channel('pass_box_realtime_master')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pass_boxes' }, () => {
+        fetchPassBoxes();
+      })
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(logsChannel);
+      supabase.removeChannel(pbChannel);
     };
   }, []);
 
   // Handle Form Submit
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!kategoriPro) {
+      alert('PENTING: Wajib memilih tipe PRO (RM atau PM) terlebih dahulu.');
+      return;
+    }
     if (!noPro.trim() || !tanggal || !passBox.trim()) return;
 
     setSubmitting(true);
     const newEntry = {
+      kategori_pro: kategoriPro,
       no_pro: noPro.trim(),
       tanggal,
       pass_box: passBox.trim(),
       user_id: user?.id || null,
-      user_name: user?.full_name || user?.username || 'Cheker 1',
+      user_name: user?.full_name || user?.username || 'Checker',
     };
 
     try {
@@ -134,8 +187,8 @@ export const DataTab: React.FC = () => {
 
       // Reset form
       setNoPro('');
-      setPassBox('');
-      noProInputRef.current?.focus();
+      setKategoriPro('');
+      // passBox tetap tersimpan di pilihan terakhir agar mempercepat input berulang
     } catch (err: any) {
       alert('Error: ' + err.message);
     } finally {
@@ -144,18 +197,21 @@ export const DataTab: React.FC = () => {
   };
 
   const handleReset = () => {
+    setKategoriPro('');
     setNoPro('');
     setTanggal(todayStr);
-    setPassBox('');
-    noProInputRef.current?.focus();
+    if (availablePassBoxes.length > 0) {
+      setPassBox(availablePassBoxes[0].name);
+    }
   };
 
   // Handle Edit Save
-  const handleSaveEdit = async (updatedLog: { id: number; no_pro: string; tanggal: string; pass_box: string }) => {
+  const handleSaveEdit = async (updatedLog: { id: number; kategori_pro: KategoriPro; no_pro: string; tanggal: string; pass_box: string }) => {
     try {
       const { error } = await supabase
         .from('pass_box_logs')
         .update({
+          kategori_pro: updatedLog.kategori_pro,
           no_pro: updatedLog.no_pro,
           tanggal: updatedLog.tanggal,
           pass_box: updatedLog.pass_box,
@@ -213,13 +269,24 @@ export const DataTab: React.FC = () => {
         if (!matchNoPro && !matchPassBox && !matchUser) return false;
       }
 
+      // Kategori filter
+      if (filterKategori !== 'ALL') {
+        const logKat = log.kategori_pro || (log.pass_box.toLowerCase().includes('pm') ? 'PM' : 'RM');
+        if (logKat !== filterKategori) return false;
+      }
+
+      // Pass Box filter
+      if (filterPassBox !== 'ALL' && log.pass_box !== filterPassBox) {
+        return false;
+      }
+
       // Date range filter
       if (startDate && log.tanggal < startDate) return false;
       if (endDate && log.tanggal > endDate) return false;
 
       return true;
     });
-  }, [logs, searchQuery, startDate, endDate]);
+  }, [logs, searchQuery, filterKategori, filterPassBox, startDate, endDate]);
 
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
@@ -228,7 +295,7 @@ export const DataTab: React.FC = () => {
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 sm:p-4 flex items-start space-x-2.5 text-amber-800 text-xs shadow-sm">
           <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1 text-[11px] sm:text-xs">
-            <span className="font-bold">Info Database:</span> Tabel belum aktif di Supabase. Menjalankan mode offline lokal. Jalankan script <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-semibold text-amber-900">supabase_setup.sql</code> di Supabase SQL Editor.
+            <span className="font-bold">Info Database:</span> Menjalankan mode offline lokal. Jalankan script <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-semibold text-amber-900">supabase_setup.sql</code> di Supabase SQL Editor untuk sinkronisasi cloud.
           </div>
         </div>
       )}
@@ -240,7 +307,7 @@ export const DataTab: React.FC = () => {
             Input Data Pass Box
           </h1>
           <p className="text-xs font-medium text-slate-500 mt-0.5">
-            No Pro · Tanggal · Pass Box
+            Pilih Kategori PRO (RM / PM) · No Pro · Tanggal · Pilihan Pass Box
           </p>
         </div>
 
@@ -256,70 +323,145 @@ export const DataTab: React.FC = () => {
         {/* Left Column: Form Input Data */}
         <div className="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
           <div className="border-b border-slate-100 pb-3 mb-4">
-            <h2 className="text-sm sm:text-base font-bold text-slate-800">Input Data</h2>
+            <h2 className="text-sm sm:text-base font-bold text-slate-800">Form Pencatatan</h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Isi tiga kolom lalu tekan Simpan (Enter).
+              Wajib pilih tipe PRO terlebih dahulu sebelum mengisi No Pro.
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-4">
-            {/* 1. NO PRO */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* 1. TIPE PRO (WAJIB DIPILIH SEBELUM KETIK NO PRO) */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1 tracking-wider">
-                1. NO PRO
-              </label>
-              <input
-                ref={noProInputRef}
-                type="text"
-                required
-                placeholder="Contoh: PRO-2026-0001"
-                value={noPro}
-                onChange={(e) => setNoPro(e.target.value)}
-                className="w-full h-11 px-3.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition font-mono placeholder:font-sans placeholder:text-slate-400"
-              />
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  1. TIPE PRO (WAJIB DIPILIH)
+                </label>
+                {!kategoriPro && (
+                  <span className="text-[10px] text-rose-700 font-extrabold bg-rose-50 border border-rose-200 px-2 py-0.5 rounded animate-pulse">
+                    Pilih Dulu
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setKategoriPro('RM');
+                    setTimeout(() => noProInputRef.current?.focus(), 80);
+                  }}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-extrabold transition flex items-center justify-center space-x-2 border shadow-xs ${
+                    kategoriPro === 'RM'
+                      ? 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-500/25'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
+                  }`}
+                >
+                  <Tag className={`w-3.5 h-3.5 ${kategoriPro === 'RM' ? 'text-white' : 'text-emerald-600'}`} />
+                  <span>PRO RM (Raw Material)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setKategoriPro('PM');
+                    setTimeout(() => noProInputRef.current?.focus(), 80);
+                  }}
+                  className={`py-2.5 px-3 rounded-xl text-xs font-extrabold transition flex items-center justify-center space-x-2 border shadow-xs ${
+                    kategoriPro === 'PM'
+                      ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-500/25'
+                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-300'
+                  }`}
+                >
+                  <Tag className={`w-3.5 h-3.5 ${kategoriPro === 'PM' ? 'text-white' : 'text-indigo-600'}`} />
+                  <span>PRO PM (Packaging Material)</span>
+                </button>
+              </div>
             </div>
 
-            {/* 2. TANGGAL */}
+            {/* 2. NO PRO (TERKUNCI SAMPAI TIPE PRO DIPILIH) */}
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase mb-1 tracking-wider">
-                2. TANGGAL
+                2. NOMOR PRO
+              </label>
+              <div className="relative flex items-center">
+                {kategoriPro ? (
+                  <div className={`absolute left-2.5 z-10 px-2 py-0.5 rounded text-[11px] font-black uppercase tracking-wider ${
+                    kategoriPro === 'RM' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                  }`}>
+                    {kategoriPro}
+                  </div>
+                ) : null}
+
+                <input
+                  ref={noProInputRef}
+                  type="text"
+                  required
+                  disabled={!kategoriPro}
+                  placeholder={!kategoriPro ? '⚠️ Pilih tipe PRO (RM / PM) di atas terlebih dahulu...' : 'Contoh: 105999 atau PRO-2026-0001'}
+                  value={noPro}
+                  onChange={(e) => setNoPro(e.target.value)}
+                  className={`w-full h-11 pr-3.5 text-sm border rounded-xl focus:outline-none transition font-mono ${
+                    kategoriPro 
+                      ? 'pl-16 border-slate-300 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white placeholder:font-sans placeholder:text-slate-400' 
+                      : 'pl-3.5 bg-slate-100/80 border-slate-200 text-slate-400 cursor-not-allowed text-xs'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* 3. TANGGAL */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase mb-1 tracking-wider">
+                3. TANGGAL
               </label>
               <input
                 type="date"
                 required
                 value={tanggal}
                 onChange={(e) => setTanggal(e.target.value)}
-                className="w-full h-11 px-3.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition bg-white"
+                className="w-full h-11 px-3.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition bg-white"
               />
             </div>
 
-            {/* 3. PASS BOX */}
+            {/* 4. PASS BOX (CHOOSE SELECTION DARI MASTER ADMIN) */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1 tracking-wider">
-                3. PASS BOX
-              </label>
-              <textarea
-                required
-                rows={3}
-                placeholder="Nomor box/keterangan pass box..."
-                value={passBox}
-                onChange={(e) => setPassBox(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSubmit();
-                  }
-                }}
-                className="w-full p-3 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition resize-none placeholder:text-slate-400"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  4. PILIHAN PASS BOX
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">Pilih salah satu</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {availablePassBoxes.map((pb) => {
+                  const isSelected = passBox === pb.name;
+
+                  return (
+                    <button
+                      key={pb.id}
+                      type="button"
+                      onClick={() => setPassBox(pb.name)}
+                      className={`py-2.5 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center space-x-2 border shadow-xs ${
+                        isSelected
+                          ? 'bg-sky-50 border-sky-500 text-sky-700 ring-2 ring-sky-500/20 font-extrabold'
+                          : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+                      }`}
+                    >
+                      <Box className={`w-3.5 h-3.5 ${isSelected ? 'text-sky-600' : 'text-slate-400'}`} />
+                      <span>{pb.name}</span>
+                      {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-sky-600 ml-1" />}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center space-x-2 pt-1">
+            <div className="flex items-center space-x-2 pt-2 border-t border-slate-100">
               <button
                 type="submit"
-                disabled={submitting}
-                className="flex-1 h-11 flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-semibold rounded-lg shadow-sm transition disabled:opacity-50 text-sm"
+                disabled={submitting || !kategoriPro || !noPro.trim()}
+                className="flex-1 h-11 flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-semibold rounded-xl shadow-sm transition disabled:opacity-50 text-sm"
               >
                 <Save className="w-4 h-4" />
                 <span>{submitting ? 'Menyimpan...' : 'Simpan Data'}</span>
@@ -328,7 +470,7 @@ export const DataTab: React.FC = () => {
               <button
                 type="button"
                 onClick={handleReset}
-                className="h-11 px-4 flex items-center justify-center space-x-1.5 border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg transition text-sm"
+                className="h-11 px-4 flex items-center justify-center space-x-1.5 border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-xl transition text-sm"
                 title="Reset input"
               >
                 <RotateCcw className="w-4 h-4 text-slate-500" />
@@ -343,8 +485,8 @@ export const DataTab: React.FC = () => {
           {/* Top Header: Title & Export Excel */}
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-sm sm:text-base font-bold text-slate-800">Daftar Data</h2>
-              <span className="text-xs text-slate-500">{filteredLogs.length} baris</span>
+              <h2 className="text-sm sm:text-base font-bold text-slate-800">Daftar Data Pass Box</h2>
+              <span className="text-xs text-slate-500">{filteredLogs.length} baris tercatat</span>
             </div>
 
             <button
@@ -356,54 +498,104 @@ export const DataTab: React.FC = () => {
             </button>
           </div>
 
-          {/* Filter Bar: Search + Date Range */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            {/* Search Input */}
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Cari No Pro, Pass Box, atau penginput..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-8 h-10 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition"
-              />
-              {searchQuery && (
+          {/* Filter Bar: Kategori + Pass Box + Search + Date Range */}
+          <div className="space-y-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              {/* Filter Tipe PRO */}
+              <div className="flex items-center bg-slate-100 p-1 rounded-lg text-xs gap-1">
                 <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  onClick={() => setFilterKategori('ALL')}
+                  className={`px-2.5 py-1 rounded font-semibold transition ${
+                    filterKategori === 'ALL' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  }`}
                 >
-                  <X className="w-3.5 h-3.5" />
+                  Semua PRO
                 </button>
-              )}
+                <button
+                  onClick={() => setFilterKategori('RM')}
+                  className={`px-2.5 py-1 rounded font-semibold transition ${
+                    filterKategori === 'RM' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-emerald-700'
+                  }`}
+                >
+                  RM
+                </button>
+                <button
+                  onClick={() => setFilterKategori('PM')}
+                  className={`px-2.5 py-1 rounded font-semibold transition ${
+                    filterKategori === 'PM' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-indigo-700'
+                  }`}
+                >
+                  PM
+                </button>
+              </div>
+
+              {/* Filter Pass Box Dropdown */}
+              <select
+                value={filterPassBox}
+                onChange={(e) => setFilterPassBox(e.target.value)}
+                className="h-8 text-xs border border-slate-300 rounded-lg px-2 bg-white text-slate-700 focus:outline-none"
+              >
+                <option value="ALL">Semua Pass Box</option>
+                {availablePassBoxes.map(p => (
+                  <option key={p.id} value={p.name}>{p.name}</option>
+                ))}
+              </select>
+
+              {/* Search Input */}
+              <div className="relative flex-1">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Cari No Pro, Pass Box, atau penginput..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-8 h-8 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Date Range Inputs */}
-            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200 text-xs">
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="h-8 bg-white border border-slate-300 rounded px-2 text-slate-700 focus:outline-none text-[11px]"
-                title="Tanggal Awal"
-              />
-              <span className="hidden sm:inline text-slate-400 font-medium text-[11px] text-center">s/d</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="h-8 bg-white border border-slate-300 rounded px-2 text-slate-700 focus:outline-none text-[11px]"
-                title="Tanggal Akhir"
-              />
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <span>Rentang Tanggal:</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="h-7 bg-white border border-slate-300 rounded px-2 text-slate-700 text-[11px] focus:outline-none"
+                />
+                <span className="text-slate-400">s/d</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="h-7 bg-white border border-slate-300 rounded px-2 text-slate-700 text-[11px] focus:outline-none"
+                />
+              </div>
+
+              {(startDate || endDate || filterKategori !== 'ALL' || filterPassBox !== 'ALL' || searchQuery) && (
+                <button
+                  onClick={() => { 
+                    setStartDate(''); 
+                    setEndDate(''); 
+                    setFilterKategori('ALL'); 
+                    setFilterPassBox('ALL'); 
+                    setSearchQuery('');
+                  }}
+                  className="text-slate-400 hover:text-slate-600 text-[11px] underline"
+                >
+                  Reset Semua Filter
+                </button>
+              )}
             </div>
-            {(startDate || endDate) && (
-              <button
-                onClick={() => { setStartDate(''); setEndDate(''); }}
-                className="text-slate-400 hover:text-slate-600 text-[11px] underline px-1 text-center"
-              >
-                Reset Filter
-              </button>
-            )}
           </div>
 
           {/* 1. MOBILE VIEW: High-Density Industrial Card List (block md:hidden) */}
@@ -415,32 +607,44 @@ export const DataTab: React.FC = () => {
             ) : (
               filteredLogs.map((log, idx) => {
                 const canModify = isAdmin || log.user_id === user?.id;
+                const kat = log.kategori_pro || (log.pass_box.toLowerCase().includes('pm') ? 'PM' : 'RM');
 
                 return (
                   <div
                     key={log.id}
                     className="bg-white border border-slate-200/90 rounded-xl p-3 shadow-xs hover:border-slate-300 transition space-y-2"
                   >
-                    {/* Top Row: Index + No Pro + Date Badge */}
+                    {/* Top Row: Index + Kategori Badge + No Pro + Date Badge */}
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-1.5">
                         <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
                           #{idx + 1}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                          kat === 'RM' 
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                            : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                        }`}>
+                          {kat}
                         </span>
                         <span className="font-extrabold text-slate-900 text-sm font-mono tracking-tight">
                           {log.no_pro}
                         </span>
                       </div>
-                      <div className="flex items-center space-x-1 text-sky-700 bg-sky-50 border border-sky-100 px-2 py-0.5 rounded text-[11px] font-semibold">
-                        <Calendar className="w-3 h-3 text-sky-500" />
+
+                      <div className="flex items-center space-x-1 text-slate-600 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded text-[11px] font-semibold">
+                        <Calendar className="w-3 h-3 text-slate-400" />
                         <span>{formatDateIndo(log.tanggal)}</span>
                       </div>
                     </div>
 
-                    {/* Middle: Pass Box Description */}
-                    <div className="bg-slate-50/80 rounded-lg p-2 text-xs text-slate-800 border border-slate-100 flex items-start space-x-1.5">
-                      <Box className="w-3.5 h-3.5 text-slate-400 flex-shrink-0 mt-0.5" />
-                      <span className="font-medium break-words leading-relaxed">{log.pass_box}</span>
+                    {/* Middle: Pass Box Selection Pill */}
+                    <div className="bg-slate-50 rounded-lg p-2 text-xs text-slate-800 border border-slate-100 flex items-center justify-between">
+                      <div className="flex items-center space-x-1.5">
+                        <Box className="w-3.5 h-3.5 text-sky-600" />
+                        <span className="font-bold text-slate-800">{log.pass_box}</span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-medium">Cleanroom transfer</span>
                     </div>
 
                     {/* Bottom: Submitter & Actions */}
@@ -481,9 +685,10 @@ export const DataTab: React.FC = () => {
               <thead>
                 <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
                   <th className="py-2.5 px-3 w-10 text-center">NO</th>
+                  <th className="py-2.5 px-3 w-16 text-center">TIPE</th>
                   <th className="py-2.5 px-3">NO PRO</th>
                   <th className="py-2.5 px-3">TANGGAL</th>
-                  <th className="py-2.5 px-3">PASS BOX</th>
+                  <th className="py-2.5 px-3">PILIHAN PASS BOX</th>
                   <th className="py-2.5 px-3">DIINPUT OLEH</th>
                   <th className="py-2.5 px-3 text-center w-16">AKSI</th>
                 </tr>
@@ -491,51 +696,70 @@ export const DataTab: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {filteredLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400">
+                    <td colSpan={7} className="py-8 text-center text-slate-400">
                       {loading ? 'Memuat data...' : 'Tidak ada data yang sesuai filter.'}
                     </td>
                   </tr>
                 ) : (
                   filteredLogs.map((log, idx) => {
                     const canModify = isAdmin || log.user_id === user?.id;
+                    const kat = log.kategori_pro || (log.pass_box.toLowerCase().includes('pm') ? 'PM' : 'RM');
 
                     return (
                       <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
                         <td className="py-2.5 px-3 text-center font-medium text-slate-500">
                           {idx + 1}
                         </td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-800">
+
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                            kat === 'RM' 
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
+                              : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
+                          }`}>
+                            {kat}
+                          </span>
+                        </td>
+
+                        <td className="py-2.5 px-3 font-semibold text-slate-800 font-mono">
                           {log.no_pro}
                         </td>
+
                         <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
                           {formatDateIndo(log.tanggal)}
                         </td>
-                        <td className="py-2.5 px-3 text-slate-700">
-                          {log.pass_box}
+
+                        <td className="py-2.5 px-3">
+                          <span className="inline-flex items-center space-x-1 font-bold text-slate-800 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">
+                            <Box className="w-3 h-3 text-sky-600" />
+                            <span>{log.pass_box}</span>
+                          </span>
                         </td>
+
                         <td className="py-2.5 px-3 text-slate-600 font-medium">
                           {log.user_name}
                         </td>
+
                         <td className="py-2.5 px-3 text-center">
                           {canModify ? (
-                            <div className="flex items-center justify-center space-x-1.5">
+                            <div className="flex items-center justify-center space-x-1">
                               <button
                                 onClick={() => setEditingLog(log)}
-                                className="p-1 text-slate-500 hover:text-sky-600 hover:bg-sky-50 rounded transition"
-                                title="Edit baris"
+                                className="p-1 text-slate-500 hover:text-sky-600 rounded transition"
+                                title="Edit"
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
                               <button
                                 onClick={() => handleDelete(log.id)}
-                                className="p-1 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded transition"
-                                title="Hapus baris"
+                                className="p-1 text-slate-500 hover:text-rose-600 rounded transition"
+                                title="Hapus"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           ) : (
-                            <span className="text-slate-300 text-[10px]">—</span>
+                            <span className="text-slate-300">-</span>
                           )}
                         </td>
                       </tr>
@@ -548,13 +772,16 @@ export const DataTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Edit Modal */}
-      <EditLogModal
-        log={editingLog}
-        isOpen={!!editingLog}
-        onClose={() => setEditingLog(null)}
-        onSave={handleSaveEdit}
-      />
+      {/* Edit Log Modal */}
+      {editingLog && (
+        <EditLogModal
+          log={editingLog}
+          isOpen={!!editingLog}
+          availablePassBoxes={availablePassBoxes}
+          onClose={() => setEditingLog(null)}
+          onSave={handleSaveEdit}
+        />
+      )}
     </div>
   );
 };

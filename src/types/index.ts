@@ -1,5 +1,7 @@
 export type UserRole = 'admin' | 'checker';
 
+export type KategoriPro = 'RM' | 'PM';
+
 export interface UserProfile {
   id: string;
   username: string;
@@ -9,8 +11,16 @@ export interface UserProfile {
   created_at?: string;
 }
 
+export interface PassBoxMaster {
+  id: number;
+  name: string;
+  is_active: boolean;
+  created_at?: string;
+}
+
 export interface PassBoxLog {
   id: number;
+  kategori_pro?: KategoriPro;
   no_pro: string;
   tanggal: string; // YYYY-MM-DD
   pass_box: string;
