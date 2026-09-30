@@ -10,34 +10,7 @@ import {
   UserCheck, 
   RefreshCw
 } from 'lucide-react';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler,
-  type ChartOptions
-} from 'chart.js';
-
-// Register Chart.js components
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  BarElement,
-  ArcElement,
-  Title,
-  Tooltip,
-  Legend,
-  Filler
-);
+import Chart, { type ChartOptions } from 'chart.js/auto';
 
 type PresetFilter = 'today' | '7days' | '30days' | 'all';
 
@@ -57,8 +30,8 @@ export const RekapTab: React.FC = () => {
   // Canvas refs for Chart.js
   const trendCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const donutCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const trendChartInstance = useRef<ChartJS | null>(null);
-  const donutChartInstance = useRef<ChartJS | null>(null);
+  const trendChartInstance = useRef<Chart | null>(null);
+  const donutChartInstance = useRef<Chart | null>(null);
 
   // Load logs
   const fetchLogs = async () => {
@@ -247,7 +220,7 @@ export const RekapTab: React.FC = () => {
       },
     };
 
-    trendChartInstance.current = new ChartJS(ctx, {
+    trendChartInstance.current = new Chart(ctx, {
       type: 'line',
       data: {
         labels,
@@ -300,7 +273,7 @@ export const RekapTab: React.FC = () => {
       '#64748b', // Slate
     ];
 
-    donutChartInstance.current = new ChartJS(ctx, {
+    donutChartInstance.current = new Chart(ctx, {
       type: 'doughnut',
       data: {
         labels: labels.length > 0 ? labels : ['Belum ada data'],

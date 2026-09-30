@@ -115,13 +115,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { success: true };
       }
 
-      // 2. Fallback jika function RPC belum dieksekusi di Supabase
+      // 2. Fallback akun lokal default jika offline / RPC belum dijalankan
       const localMatch = DEFAULT_LOCAL_USERS[u];
       if (localMatch && localMatch.pass === p) {
         setUser(localMatch.profile);
         localStorage.setItem('pass_box_current_user', JSON.stringify(localMatch.profile));
         setLoading(false);
         return { success: true };
+      }
+
+      // 3. Jika RPC 404 / tidak ditemukan di Supabase
+      if (error && (error.code === 'PGRST202' || error.message?.includes('not find') || String(error).includes('404'))) {
+        setLoading(false);
+        return { 
+          success: false, 
+          error: 'Fungsi database "verify_user_login" belum diaktifkan di Supabase (404). Silakan salin & jalankan seluruh isi file "supabase_setup.sql" di Supabase SQL Editor.' 
+        };
       }
 
       setLoading(false);

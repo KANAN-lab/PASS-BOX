@@ -85,6 +85,8 @@ begin
 end;
 $$;
 
+grant execute on function public.verify_user_login(text, text) to anon, authenticated, service_role;
+
 -- 10. Fungsi Ubah Role (Hanya Admin)
 create or replace function public.change_user_role(admin_user_id uuid, target_user_id uuid, new_role user_role)
 returns void
@@ -239,3 +241,7 @@ values
   ('contoh1', current_date, '1 PM', '22222222-2222-2222-2222-222222222222', 'Admin', now() - interval '15 minutes'),
   ('1059555', current_date, 'asbox 1 PM fani', '11111111-1111-1111-1111-111111111111', 'Cheker 1', now() - interval '10 minutes'),
   ('Contoh', current_date, '1', '11111111-1111-1111-1111-111111111111', 'Cheker 1', now() - interval '5 minutes');
+
+-- 16. Refresh Schema Cache PostgREST
+notify pgrst, 'reload schema';
+
