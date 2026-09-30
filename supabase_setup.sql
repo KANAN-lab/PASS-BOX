@@ -1,31 +1,38 @@
 -- ==============================================================================
--- PASS BOX LOG - UNIFIED SUPABASE SETUP SCRIPT (100% BULLETPROOF & SECURE)
--- Jalankan script ini di: Supabase Dashboard -> SQL Editor -> New Query -> Run
+-- PASS BOX LOG - SAFE & BULLETPROOF SUPABASE SETUP SCRIPT (NON-DESTRUCTIVE)
+-- ==============================================================================
+-- PERINGATAN:
+-- Script ini dibuat AMAN untuk dijalankan berulang kali.
+-- Perintah DROP TABLE telah DINONAKTIFKAN agar DATA TIDAK TERHAPUS jika script
+-- dijalankan di database yang sudah memiliki data transaksi operasional.
 -- ==============================================================================
 
 -- 1. Enable Extension untuk UUID & Enkripsi Password (Bcrypt)
 create extension if not exists "uuid-ossp";
 create extension if not exists "pgcrypto";
 
--- 2. Bersihkan trigger/data auth lama yang menyebabkan error 500 di GoTrue
+-- 2. Bersihkan trigger/data auth lama yang menyebabkan error 500 di GoTrue (jika ada)
 drop trigger if exists on_auth_user_created on auth.users;
 drop function if exists public.handle_new_user();
 
--- Bersihkan dummy test di auth.users jika ada
-delete from auth.identities where user_id in ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222');
-delete from auth.users where id in ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222');
+-- 3. ENUM Role (Aman dibuat ulang tanpa error)
+do $$
+begin
+  create type user_role as enum ('admin', 'spv', 'checker');
+exception
+  when duplicate_object then null;
+end $$;
 
--- 3. Hapus tabel lama untuk clean slate
-drop table if exists public.pass_box_logs cascade;
-drop table if exists public.profiles cascade;
-drop table if exists public.pass_boxes cascade;
-drop type if exists user_role cascade;
+-- Pastikan role 'spv' terdaftar jika ENUM lama sudah ada
+do $$
+begin
+  alter type user_role add value if not exists 'spv' after 'admin';
+exception
+  when duplicate_object then null;
+end $$;
 
--- 4. Buat ENUM Role
-create type user_role as enum ('admin', 'spv', 'checker');
-
--- 5. Buat Tabel Profiles (Manajemen Akun & Role)
-create table public.profiles (
+-- 4. Buat Tabel Profiles jika belum ada (Manajemen Akun & Role)
+create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
   username text unique not null,
   full_name text not null,
@@ -36,8 +43,8 @@ create table public.profiles (
   updated_at timestamptz not null default now()
 );
 
--- 6. Buat Tabel Pass Box Logs (Data Input Pass Box)
-create table public.pass_box_logs (
+-- 5. Buat Tabel Pass Box Logs jika belum ada (Data Input Pass Box)
+create table if not exists public.pass_box_logs (
   id bigint generated always as identity primary key,
   kategori_pro text not null default 'RM', -- 'RM' atau 'PM'
   no_pro text not null,
@@ -376,13 +383,16 @@ on conflict (username) do update set
   password_hash = excluded.password_hash,
   role = excluded.role;
 
--- 15. Initial Seed Data Pass Box Logs
+-- 15. Initial Seed Data Pass Box Logs (Hanya dimasukkan jika tabel kosong)
 insert into public.pass_box_logs (no_pro, tanggal, pass_box, user_id, user_name, created_at)
-values
-  ('105999', current_date, 'pasbox 1. PM', '11111111-1111-1111-1111-111111111111', 'Cheker 1', now() - interval '20 minutes'),
-  ('contoh1', current_date, '1 PM', '22222222-2222-2222-2222-222222222222', 'Admin', now() - interval '15 minutes'),
-  ('1059555', current_date, 'asbox 1 PM fani', '11111111-1111-1111-1111-111111111111', 'Cheker 1', now() - interval '10 minutes'),
-  ('Contoh', current_date, '1', '11111111-1111-1111-1111-111111111111', 'Cheker 1', now() - interval '5 minutes');
+select d.no_pro, d.tanggal, d.pass_box, d.user_id, d.user_name, d.created_at
+from (values
+  ('105999', current_date, 'pasbox 1. PM', '11111111-1111-1111-1111-111111111111'::uuid, 'Cheker 1', now() - interval '20 minutes'),
+  ('contoh1', current_date, '1 PM', '22222222-2222-2222-2222-222222222222'::uuid, 'Admin', now() - interval '15 minutes'),
+  ('1059555', current_date, 'asbox 1 PM fani', '11111111-1111-1111-1111-111111111111'::uuid, 'Cheker 1', now() - interval '10 minutes'),
+  ('Contoh', current_date, '1', '11111111-1111-1111-1111-111111111111'::uuid, 'Cheker 1', now() - interval '5 minutes')
+) as d(no_pro, tanggal, pass_box, user_id, user_name, created_at)
+where not exists (select 1 from public.pass_box_logs limit 1);
 
 -- 16. Refresh Schema Cache PostgREST
 notify pgrst, 'reload schema';

@@ -7,8 +7,10 @@ import type { PassBoxLog, KategoriPro, PassBoxMaster } from '../types';
 import { StatCard } from './StatCard';
 import { EditLogModal } from './EditLogModal';
 import { exportLogsToExcel, formatDateIndo } from '../utils/excel';
+import { downloadJSONBackup } from '../utils/backup';
 import { 
   FileSpreadsheet, 
+  FileJson,
   Search, 
   RotateCcw, 
   Save, 
@@ -653,13 +655,24 @@ export const DataTab: React.FC = () => {
               <span className="text-xs text-slate-500">{filteredLogs.length} baris tercatat</span>
             </div>
 
-            <button
-              onClick={() => exportLogsToExcel(filteredLogs)}
-              className="flex items-center space-x-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-              <span>Export Excel</span>
-            </button>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => downloadJSONBackup(user?.full_name)}
+                title="Unduh file backup database lengkap format JSON (mencakup semua data transaksi)"
+                className="flex items-center space-x-1.5 bg-slate-50 hover:bg-sky-50 text-slate-700 hover:text-sky-700 border border-slate-300 hover:border-sky-300 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+              >
+                <FileJson className="w-4 h-4 text-sky-600" />
+                <span className="hidden sm:inline">Backup JSON</span>
+              </button>
+
+              <button
+                onClick={() => exportLogsToExcel(filteredLogs)}
+                className="flex items-center space-x-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Export Excel</span>
+              </button>
+            </div>
           </div>
 
           {/* Filter Bar: Kategori + Pass Box + Search + Date Range */}

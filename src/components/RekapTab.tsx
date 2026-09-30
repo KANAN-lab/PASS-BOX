@@ -3,8 +3,10 @@ import { supabase } from '../lib/supabase';
 import type { PassBoxLog, CheckerSummary } from '../types';
 import { StatCard } from './StatCard';
 import { exportLogsToExcel, formatDateIndo, formatDateTimeIndo } from '../utils/excel';
+import { downloadJSONBackup } from '../utils/backup';
 import { 
   FileSpreadsheet, 
+  FileJson,
   TrendingUp, 
   PieChart as PieIcon, 
   UserCheck, 
@@ -479,6 +481,15 @@ export const RekapTab: React.FC = () => {
             title="Segarkan data rekap"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+
+          <button
+            onClick={() => downloadJSONBackup('Rekap Viewer')}
+            title="Unduh file backup database lengkap format JSON"
+            className="flex items-center space-x-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 px-3 py-2 rounded-lg text-xs font-semibold shadow-xs transition"
+          >
+            <FileJson className="w-4 h-4 text-sky-600" />
+            <span className="hidden sm:inline">Backup Database</span>
           </button>
 
           <button

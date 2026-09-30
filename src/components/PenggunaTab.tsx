@@ -16,14 +16,29 @@ import {
   X,
   Box,
   Plus,
-  Trash2
+  Trash2,
+  Database,
+  Download,
+  Upload,
+  FileSpreadsheet,
+  FileJson,
+  CheckCircle,
+  AlertTriangle,
+  Info
 } from 'lucide-react';
+import { 
+  downloadJSONBackup, 
+  downloadExcelBackup, 
+  parseBackupFile, 
+  executeRestoreLogs, 
+  type RestorePreview 
+} from '../utils/backup';
 
 export const PenggunaTab: React.FC = () => {
   const { user: currentUser, isAdmin, isSpv, canManageMasterData } = useAuth();
   
-  // Sub-tab: 'users' vs 'pass_boxes'
-  const [activeSubTab, setActiveSubTab] = useState<'users' | 'pass_boxes'>('users');
+  // Sub-tab: 'users' vs 'pass_boxes' vs 'backup'
+  const [activeSubTab, setActiveSubTab] = useState<'users' | 'pass_boxes' | 'backup'>('users');
 
   // Users state
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -56,6 +71,98 @@ export const PenggunaTab: React.FC = () => {
 
   // Action status
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  // Backup & Restore State
+  const [downloadingJson, setDownloadingJson] = useState(false);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
+  const [restorePreview, setRestorePreview] = useState<RestorePreview | null>(null);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [restoreProgress, setRestoreProgress] = useState(0);
+  const [restoreStatusText, setRestoreStatusText] = useState('');
+  const [restoreResult, setRestoreResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleDownloadJsonBackup = async () => {
+    setDownloadingJson(true);
+    try {
+      const res = await downloadJSONBackup(currentUser?.full_name);
+      if (res.success) {
+        setSuccessMsg(`File backup JSON (${res.count} baris log) berhasil diunduh.`);
+        setTimeout(() => setSuccessMsg(''), 4000);
+      } else {
+        alert('Gagal mengunduh backup: ' + res.error);
+      }
+    } finally {
+      setDownloadingJson(false);
+    }
+  };
+
+  const handleDownloadExcelBackup = async () => {
+    setDownloadingExcel(true);
+    try {
+      const res = await downloadExcelBackup();
+      if (res.success) {
+        setSuccessMsg(`File backup Excel (${res.count} baris log) berhasil diunduh.`);
+        setTimeout(() => setSuccessMsg(''), 4000);
+      } else {
+        alert('Gagal mengunduh backup Excel: ' + res.error);
+      }
+    } finally {
+      setDownloadingExcel(false);
+    }
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setRestoreResult(null);
+    const preview = await parseBackupFile(file);
+    setRestorePreview(preview);
+    e.target.value = ''; // Reset input agar bisa pilih file yang sama jika perlu
+  };
+
+  const handleExecuteRestore = async () => {
+    if (!restorePreview || !restorePreview.isValid) return;
+
+    const confirmMsg = `Konfirmasi Pemulihan:\n\nSistem akan memasukkan ${restorePreview.logsCount} data transaksi ke database Supabase.\nLanjutkan proses pemulihan?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setRestoreLoading(true);
+    setRestoreProgress(5);
+    setRestoreStatusText('Memulai proses pemulihan data...');
+    setRestoreResult(null);
+
+    try {
+      const result = await executeRestoreLogs(
+        restorePreview.rawPayload.logs,
+        restorePreview.rawPayload.pass_boxes,
+        (progress, text) => {
+          setRestoreProgress(progress);
+          setRestoreStatusText(text);
+        }
+      );
+
+      if (result.success) {
+        setRestoreResult({
+          success: true,
+          message: `Berhasil memulihkan ${result.restoredCount} baris data log transaksi ke database Supabase!`,
+        });
+        setRestorePreview(null);
+      } else {
+        setRestoreResult({
+          success: false,
+          message: `Gagal memulihkan data: ${result.error || 'Terjadi kesalahan sistem'}`,
+        });
+      }
+    } catch (err: any) {
+      setRestoreResult({
+        success: false,
+        message: `Terjadi error: ${err.message}`,
+      });
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -480,7 +587,7 @@ export const PenggunaTab: React.FC = () => {
         </div>
 
         {/* Sub-Tab Pill Switcher */}
-        <div className="flex items-center bg-slate-200/80 p-1 rounded-xl gap-1 self-start sm:self-auto">
+        <div className="flex flex-wrap items-center bg-slate-200/80 p-1 rounded-xl gap-1 self-start sm:self-auto">
           <button
             onClick={() => setActiveSubTab('users')}
             className={`flex items-center space-x-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition ${
@@ -503,6 +610,18 @@ export const PenggunaTab: React.FC = () => {
           >
             <Box className="w-3.5 h-3.5" />
             <span>Master Pass Box ({passBoxes.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab('backup')}
+            className={`flex items-center space-x-1.5 py-1.5 px-3 rounded-lg text-xs font-bold transition ${
+              activeSubTab === 'backup'
+                ? 'bg-emerald-600 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span>Backup & Pemulihan</span>
           </button>
         </div>
       </div>
@@ -936,6 +1055,283 @@ export const PenggunaTab: React.FC = () => {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* SECTION 3: BACKUP & PEMULIHAN (activeSubTab === 'backup') */}
+      {/* ==================================================== */}
+      {activeSubTab === 'backup' && (
+        <div className="space-y-5 animate-fadeIn">
+          {/* Information & Alert Banner */}
+          <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-start space-x-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs mt-0.5">
+                <Database className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm sm:text-base font-extrabold text-emerald-950">
+                  Pusat Backup & Pemulihan Data Mandiri (Disaster Recovery)
+                </h3>
+                <p className="text-xs text-emerald-800/90 mt-0.5 max-w-2xl leading-relaxed">
+                  Dirancang khusus untuk mengamankan data operasional pada <strong>Supabase Free Tier</strong> (yang tidak memiliki auto-backup rollback bawaan server). Simpan cadangan snapshot berkala atau pulihkan data kapan saja jika terjadi kendala.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-1.5 bg-emerald-100/80 text-emerald-800 px-3 py-1.5 rounded-lg text-xs font-semibold self-stretch sm:self-auto justify-center">
+              <Shield className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Proteksi Data Aktif</span>
+            </div>
+          </div>
+
+          {/* Result Alert Message */}
+          {restoreResult && (
+            <div
+              className={`p-4 rounded-xl border flex items-start space-x-3 shadow-xs animate-fadeIn ${
+                restoreResult.success
+                  ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                  : 'bg-rose-50 border-rose-300 text-rose-900'
+              }`}
+            >
+              {restoreResult.success ? (
+                <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
+              )}
+              <div className="flex-1 text-xs">
+                <div className="font-bold text-sm mb-0.5">
+                  {restoreResult.success ? 'Pemulihan Berhasil!' : 'Pemulihan Gagal!'}
+                </div>
+                <div>{restoreResult.message}</div>
+              </div>
+              <button
+                onClick={() => setRestoreResult(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold px-1"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Grid: 2 Utama (Unduh Backup vs Pulihkan Data) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Panel 1: Unduh Backup Data */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2 text-slate-800">
+                  <div className="p-2 bg-sky-50 text-sky-600 rounded-lg">
+                    <Download className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800">1. Unduh Cadangan Data (Backup Snapshot)</h4>
+                    <span className="text-[11px] text-slate-500">Ambil salinan seluruh riwayat log transaksi & master data</span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed pt-1">
+                  Disarankan melakukan backup setiap akhir shift kerja atau minimal 1 minggu sekali. File hasil backup dapat disimpan di komputer lokal atau cloud drive perusahaan.
+                </p>
+              </div>
+
+              <div className="space-y-2.5 pt-2">
+                {/* Tombol Backup JSON */}
+                <button
+                  onClick={handleDownloadJsonBackup}
+                  disabled={downloadingJson || downloadingExcel}
+                  className="w-full flex items-center justify-between p-3.5 bg-slate-50 hover:bg-sky-50/80 border border-slate-200 hover:border-sky-300 rounded-xl transition group text-left"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition">
+                      <FileJson className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-800 group-hover:text-sky-900">
+                        Unduh Snapshot Database (.JSON)
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        Format standar untuk fitur pemulihan (restore) instan
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold text-sky-600 group-hover:underline flex items-center space-x-1">
+                    {downloadingJson ? (
+                      <RefreshCw className="w-4 h-4 animate-spin text-sky-600" />
+                    ) : (
+                      <span>Download</span>
+                    )}
+                  </span>
+                </button>
+
+                {/* Tombol Backup Excel */}
+                <button
+                  onClick={handleDownloadExcelBackup}
+                  disabled={downloadingJson || downloadingExcel}
+                  className="w-full flex items-center justify-between p-3.5 bg-slate-50 hover:bg-emerald-50/80 border border-slate-200 hover:border-emerald-300 rounded-xl transition group text-left"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition">
+                      <FileSpreadsheet className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-800 group-hover:text-emerald-900">
+                        Unduh Arsip Lengkap (.XLSX Excel)
+                      </div>
+                      <div className="text-[11px] text-slate-500">
+                        Tabel spreadsheet lengkap (Log, Master, dan Ringkasan)
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-600 group-hover:underline flex items-center space-x-1">
+                    {downloadingExcel ? (
+                      <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                    ) : (
+                      <span>Download</span>
+                    )}
+                  </span>
+                </button>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-[11px] text-slate-500 flex items-center space-x-2">
+                <Info className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                <span>Kedua format mencakup seluruh data transaksi tanpa terpotong filter aktif.</span>
+              </div>
+            </div>
+
+            {/* Panel 2: Pulihkan Data dari File Backup */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between">
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2 text-slate-800">
+                  <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
+                    <Upload className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-800">2. Pulihkan Data dari File Cadangan (Restore)</h4>
+                    <span className="text-[11px] text-slate-500">Masukkan kembali data dari file backup JSON yang pernah diunduh</span>
+                  </div>
+                </div>
+
+                <p className="text-xs text-slate-600 leading-relaxed pt-1">
+                  Gunakan fitur ini jika database sempat terhapus atau perlu sinkronisasi data dari snapshot cadangan sebelumnya.
+                </p>
+              </div>
+
+              {/* Upload Input Area */}
+              <div className="space-y-3">
+                <label className="border-2 border-dashed border-slate-300 hover:border-emerald-500 hover:bg-emerald-50/20 rounded-xl p-4 flex flex-col items-center justify-center cursor-pointer transition text-center group">
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleFileSelect}
+                    disabled={restoreLoading}
+                    className="hidden"
+                  />
+                  <FileJson className="w-8 h-8 text-slate-400 group-hover:text-emerald-600 group-hover:scale-110 transition mb-2" />
+                  <span className="text-xs font-bold text-slate-700 group-hover:text-emerald-700">
+                    Pilih File Backup (.JSON)
+                  </span>
+                  <span className="text-[11px] text-slate-400 mt-0.5">
+                    Klik di sini untuk mengunggah file cadangan
+                  </span>
+                </label>
+
+                {/* Preview Box jika file dipilih */}
+                {restorePreview && (
+                  <div className="border border-slate-200 rounded-xl bg-slate-50 p-3.5 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <CheckCircle className="w-4 h-4 text-emerald-600" />
+                        <span className="text-xs font-bold text-slate-800">File Backup Terverifikasi</span>
+                      </div>
+                      <button
+                        onClick={() => setRestorePreview(null)}
+                        className="text-[11px] text-slate-400 hover:text-rose-600 font-semibold"
+                      >
+                        Batal
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px] bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div>
+                        <span className="text-slate-400 block">Total Data Log:</span>
+                        <strong className="text-slate-800 text-xs">{restorePreview.logsCount} Baris</strong>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 block">Rentang Tanggal:</span>
+                        <strong className="text-slate-800 text-xs">
+                          {restorePreview.dateRange?.earliest} s/d {restorePreview.dateRange?.latest}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar saat Restore */}
+                    {restoreLoading && (
+                      <div className="space-y-1.5 pt-1">
+                        <div className="flex justify-between text-[11px] text-slate-600">
+                          <span>{restoreStatusText}</span>
+                          <span className="font-bold">{restoreProgress}%</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="bg-emerald-600 h-2 transition-all duration-300 rounded-full"
+                            style={{ width: `${restoreProgress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tombol Eksekusi Restore */}
+                    {!restoreLoading && (
+                      <button
+                        onClick={handleExecuteRestore}
+                        className="w-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold py-2 px-4 rounded-lg text-xs shadow-sm transition flex items-center justify-center space-x-2"
+                      >
+                        <Upload className="w-4 h-4" />
+                        <span>Mulai Pemulihan {restorePreview.logsCount} Data Log</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900 flex items-start space-x-2">
+                <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <span>
+                  Proses pemulihan tidak akan menghapus data yang sudah ada, melainkan menambahkan record dari file backup ke database.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Panel 3: Panduan Keamanan & Pencegahan Free Tier */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-3">
+            <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center space-x-2">
+              <Shield className="w-4 h-4 text-sky-600" />
+              <span>Panduan Keamanan Database (Supabase Free Tier)</span>
+            </h4>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-slate-600">
+              <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-xl space-y-1.5">
+                <strong className="text-slate-800 font-bold block">1. Script Setup Sudah Diamankan</strong>
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  File <code className="text-sky-700 font-mono">supabase_setup.sql</code> kini telah dibuat 100% non-destructive (perintah <code className="text-rose-600 font-mono">DROP TABLE</code> telah dinonaktifkan). Script aman jika tanpa sengaja dijalankan ulang.
+                </p>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-xl space-y-1.5">
+                <strong className="text-slate-800 font-bold block">2. Rutinitas Backup Mingguan</strong>
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  Karena Free Tier tidak memiliki automated point-in-time recovery, biasakan mengklik tombol <strong>Unduh Snapshot JSON</strong> setiap akhir pekan untuk menyimpan arsip fisik.
+                </p>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-xl space-y-1.5">
+                <strong className="text-slate-800 font-bold block">3. Export Manual dari Supabase</strong>
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  Anda juga dapat sewaktu-waktu membuka Dashboard Supabase &gt; <strong>Table Editor</strong> &gt; pilih tabel &gt; klik <strong>Export to CSV</strong> sebagai backup cadangan langsung dari server.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
