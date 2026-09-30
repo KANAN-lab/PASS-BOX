@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Box, Lock, User, ArrowRight, AlertCircle, Info } from 'lucide-react';
+import { Lock, User, ArrowRight, AlertCircle, Info } from 'lucide-react';
 
 export const LoginView: React.FC = () => {
   const { login } = useAuth();
@@ -34,8 +34,8 @@ export const LoginView: React.FC = () => {
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8 border border-slate-100 animate-fadeIn">
         {/* App Logo & Branding */}
         <div className="text-center mb-6">
-          <div className="w-14 h-14 bg-sky-500/10 border border-sky-500/20 text-sky-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm">
-            <Box className="w-7 h-7" />
+          <div className="w-16 h-16 bg-white border border-slate-200 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm p-2">
+            <img src="/logo.png" alt="Logo" className="w-12 h-12 object-contain" />
           </div>
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Pass Box Log</h1>
           <p className="text-xs text-slate-500 mt-1">Sistem Otentikasi dan Monitoring Pass Box RMPM</p>

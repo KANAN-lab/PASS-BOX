@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Box, BarChart2, Users, LogOut, Database, ShieldCheck, User } from 'lucide-react';
+import { BarChart2, Users, LogOut, Database, ShieldCheck, User } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: 'data' | 'rekap' | 'pengguna';
@@ -16,8 +16,8 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
         {/* Left: Brand + Nav tabs */}
         <div className="flex items-center space-x-6">
           <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 border border-sky-500/30 flex items-center justify-center shadow-inner">
-              <Box className="w-5 h-5 text-sky-400" />
+            <div className="w-8 h-8 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center p-1 shadow-sm">
+              <img src="/logo.png" alt="Logo" className="w-5 h-5 object-contain" />
             </div>
             <span className="font-bold text-lg tracking-wide text-white">Pass Box Log</span>
           </div>
