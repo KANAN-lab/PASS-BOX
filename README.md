@@ -50,20 +50,22 @@ Ikuti instruksi di terminal. Konfigurasi routing SPA otomatis ditangani oleh fil
 
 ---
 
-## 4. Fitur Utama
+## 4. Akun & Kredensial Default
 
-- **Tab Data (Checker & Admin)**:
-  - Form input cepat: No Pro, Tanggal, Pass Box (shortcut `Enter` untuk simpan).
-  - Indikator metrik realtime: `TOTAL DATA` dan `TANGGAL HARI INI`.
-  - Multi-search filter (No Pro, Pass Box, Penginput) dan Date range filter.
-  - Tombol **Export Excel** format `.xlsx` (menggunakan SheetJS).
-  - Edit & Hapus data dengan modal konfirmasi.
-- **Tab Rekap (Admin Only)**:
-  - Rekap total entri per checker dengan progress bar visual distribusi kontribusi.
-  - Filter cepat periode: `Hari ini`, `7 hari`, `30 hari`, `Semua`, atau rentang tanggal kustom.
-  - Ringkasan total periode, hari aktif, dan waktu input terakhir.
-- **Tab Pengguna (Admin Only)**:
-  - Manajemen akun staf (Checker dan Administrator).
-  - Tambah pengguna baru & toggle status aktif/nonaktif.
-- **Role Switcher Cepat**:
-  - Terdapat toggle instan `Checker` / `Admin` di navbar atas untuk kemudahan testing operasional.
+Setelah script `supabase_setup.sql` dijalankan di Supabase SQL Editor, akun default berikut sudah siap digunakan untuk login:
+
+| Role | Username / Email | Password Default | Hak Akses |
+| :--- | :--- | :--- | :--- |
+| **CHECKER** | `cheker1` *(cheker1@passbox.local)* | `checker123` | Input data log, lihat data, export Excel |
+| **ADMINISTRATOR** | `admin` *(admin@passbox.local)* | `admin123` | Hak penuh: Tab Data, Rekap Per Checker, dan Manajemen Pengguna (Ubah Role & Status Akun) |
+
+---
+
+## 5. Fitur Keamanan & Otorisasi
+
+- **Role Locking**: Pengguna biasa tidak memiliki akses untuk mengubah rolenya sendiri. Kolom role dilindungi oleh trigger PostgreSQL `protect_profile_role` dan fungsi database RPC `change_user_role`.
+- **Manajemen Role**: Hanya Administrator terverifikasi yang dapat mempromosikan atau mendemosikan role pengguna di tab **Pengguna**.
+- **Proteksi Self-Lockout**: Administrator tidak dapat menurunkan role akunnya sendiri agar sistem tidak terkunci.
+- **Enkripsi**: Password disimpan dengan enkripsi `bcrypt` (`crypt` + `gen_salt`) pada schema `auth.users` Supabase.
+- **RLS (Row Level Security)**: Data tabel dilindungi hak akses granular di tingkat database PostgreSQL.
+

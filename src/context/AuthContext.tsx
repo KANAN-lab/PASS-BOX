@@ -1,32 +1,15 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import type { UserProfile, UserRole } from '../types';
+import type { UserProfile } from '../types';
 
 interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
-  loginAs: (role: UserRole, name?: string) => void;
+  login: (usernameOrEmail: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
-  switchUserRole: (role: UserRole) => void;
+  refreshProfile: () => Promise<void>;
 }
-
-const DEFAULT_USERS: Record<UserRole, UserProfile> = {
-  checker: {
-    id: '11111111-1111-1111-1111-111111111111',
-    username: 'cheker1',
-    full_name: 'Cheker 1',
-    role: 'checker',
-    is_active: true,
-  },
-  admin: {
-    id: '22222222-2222-2222-2222-222222222222',
-    username: 'admin',
-    full_name: 'Admin',
-    role: 'admin',
-    is_active: true,
-  },
-};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -37,68 +20,139 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         return JSON.parse(saved);
       } catch {
-        return DEFAULT_USERS.checker;
+        return null;
       }
     }
-    return DEFAULT_USERS.checker; // Default login as Cheker 1 matching Screenshot 1
+    return null;
   });
-  const [loading, setLoading] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
+
+  // Fungsi untuk memuat profil terbaru dari database
+  const loadProfile = async (userId: string): Promise<UserProfile | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error || !data) {
+        console.warn('Gagal membaca profil dari Supabase:', error?.message);
+        return null;
+      }
+
+      // Jika akun tidak aktif, tolak akses
+      if (!data.is_active) {
+        await supabase.auth.signOut();
+        setUser(null);
+        localStorage.removeItem('pass_box_current_user');
+        return null;
+      }
+
+      setUser(data);
+      localStorage.setItem('pass_box_current_user', JSON.stringify(data));
+      return data;
+    } catch {
+      return null;
+    }
+  };
 
   useEffect(() => {
-    // Check active Supabase session if any
-    const checkSession = async () => {
+    // 1. Cek sesi aktif awal
+    const initAuth = async () => {
       try {
         setLoading(true);
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-
-          if (profile) {
-            setUser(profile);
-            localStorage.setItem('pass_box_current_user', JSON.stringify(profile));
-          }
+          await loadProfile(session.user.id);
+        } else {
+          // Jika tidak ada session auth aktif, hapus state
+          setUser(null);
+          localStorage.removeItem('pass_box_current_user');
         }
-      } catch {
-        // Fallback to local user
+      } catch (err) {
+        console.error('Auth initialization error:', err);
       } finally {
         setLoading(false);
       }
     };
-    checkSession();
+
+    initAuth();
+
+    // 2. Pasang Listener Perubahan Auth Supabase Realtime
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session?.user) {
+        await loadProfile(session.user.id);
+      } else if (event === 'SIGNED_OUT') {
+        setUser(null);
+        localStorage.removeItem('pass_box_current_user');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const loginAs = (role: UserRole, customName?: string) => {
-    const base = DEFAULT_USERS[role];
-    const newUser: UserProfile = {
-      ...base,
-      full_name: customName || base.full_name,
-    };
-    setUser(newUser);
-    localStorage.setItem('pass_box_current_user', JSON.stringify(newUser));
+  // Login dengan username atau email & password
+  const login = async (usernameOrEmail: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    setLoading(true);
+    try {
+      const cleanedInput = usernameOrEmail.trim();
+      const email = cleanedInput.includes('@')
+        ? cleanedInput
+        : `${cleanedInput.toLowerCase()}@passbox.local`;
+
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (error) {
+        return { success: false, error: 'Username atau password salah: ' + error.message };
+      }
+
+      if (data.user) {
+        const profile = await loadProfile(data.user.id);
+        if (!profile) {
+          return { success: false, error: 'Profil akun tidak ditemukan atau akun telah dinonaktifkan oleh Administrator.' };
+        }
+        return { success: true };
+      }
+
+      return { success: false, error: 'Gagal melakukan otorisasi login.' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Terjadi kesalahan sistem saat login.' };
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const switchUserRole = (role: UserRole) => {
-    loginAs(role);
-  };
-
+  // Logout sesi
   const logout = async () => {
+    setLoading(true);
     try {
       await supabase.auth.signOut();
     } catch {
       // Ignore
+    } finally {
+      setUser(null);
+      localStorage.removeItem('pass_box_current_user');
+      setLoading(false);
     }
-    setUser(null);
-    localStorage.removeItem('pass_box_current_user');
   };
 
-  const isAdmin = user?.role === 'admin';
+  // Refresh profil saat role diubah oleh admin
+  const refreshProfile = async () => {
+    if (user?.id) {
+      await loadProfile(user.id);
+    }
+  };
+
+  const isAdmin = user?.role === 'admin' && user?.is_active === true;
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin, loginAs, logout, switchUserRole }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin, login, logout, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

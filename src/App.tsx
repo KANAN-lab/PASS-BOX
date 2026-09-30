@@ -7,8 +7,19 @@ import { PenggunaTab } from './components/PenggunaTab';
 import { LoginView } from './components/LoginView';
 
 const MainLayout: React.FC = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, loading, isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<'data' | 'rekap' | 'pengguna'>('data');
+
+  if (loading && !user) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white text-sm">
+        <div className="flex items-center space-x-2.5 bg-slate-800/80 px-4 py-3 rounded-xl border border-slate-700/60 shadow-lg">
+          <div className="w-4 h-4 border-2 border-sky-400 border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs font-medium text-slate-300">Memverifikasi otorisasi akun...</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return <LoginView />;
