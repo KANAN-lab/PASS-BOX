@@ -61,10 +61,42 @@ export const DataTab: React.FC = () => {
   const dtContainerRef = useRef<HTMLDivElement | null>(null);
   const dtInstanceRef = useRef<any>(null);
   const logsRef = useRef<PassBoxLog[]>([]);
+  const userRef = useRef(user);
+  const isAdminRef = useRef(isAdmin);
+  const isSpvRef = useRef(isSpv);
 
   useEffect(() => {
     logsRef.current = logs;
   }, [logs]);
+
+  useEffect(() => {
+    userRef.current = user;
+    isAdminRef.current = isAdmin;
+    isSpvRef.current = isSpv;
+  }, [user, isAdmin, isSpv]);
+
+  // Aturan Hak Akses Modifikasi (Edit / Delete):
+  // 1. Administrator: Akses penuh (bisa edit & hapus semua data)
+  // 2. SPV: Read-Only (tidak bisa edit/hapus data siapa pun)
+  // 3. Checker: Hanya bisa edit/hapus data hasil inputan miliknya sendiri
+  const canUserModifyLog = (log: PassBoxLog): boolean => {
+    const currentUser = userRef.current;
+    if (!currentUser) return false;
+    if (isAdminRef.current) return true;
+    if (isSpvRef.current) return false;
+
+    // Checker: Cek kecocokan ID pengguna atau Nama Pengguna (case-insensitive)
+    const isOwnerById = Boolean(
+      log.user_id && currentUser.id && String(log.user_id) === String(currentUser.id)
+    );
+    const isOwnerByName = Boolean(
+      log.user_name &&
+      ((currentUser.full_name && log.user_name.trim().toLowerCase() === currentUser.full_name.trim().toLowerCase()) ||
+       (currentUser.username && log.user_name.trim().toLowerCase() === currentUser.username.trim().toLowerCase()))
+    );
+
+    return isOwnerById || isOwnerByName;
+  };
 
   // Fetch active pass boxes
   const fetchPassBoxes = async () => {
@@ -226,6 +258,12 @@ export const DataTab: React.FC = () => {
 
   // Handle Edit Save
   const handleSaveEdit = async (updatedLog: { id: number; kategori_pro: KategoriPro; no_pro: string; tanggal: string; pass_box: string }) => {
+    const targetLog = logs.find(l => l.id === updatedLog.id);
+    if (targetLog && !canUserModifyLog(targetLog)) {
+      alert('Akses ditolak: Anda hanya memiliki izin untuk mengubah data log yang Anda input sendiri.');
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('pass_box_logs')
@@ -252,6 +290,12 @@ export const DataTab: React.FC = () => {
 
   // Handle Delete
   const handleDelete = async (id: number) => {
+    const targetLog = logs.find(l => l.id === id);
+    if (targetLog && !canUserModifyLog(targetLog)) {
+      alert('Akses ditolak: Anda hanya memiliki izin untuk menghapus data log yang Anda input sendiri.');
+      return;
+    }
+
     if (!window.confirm('Apakah Anda yakin ingin menghapus data ini?')) return;
 
     try {
@@ -320,6 +364,11 @@ export const DataTab: React.FC = () => {
       if (!idStr) return;
       const targetLog = logsRef.current.find((l) => String(l.id) === String(idStr));
       if (!targetLog) return;
+
+      if (!canUserModifyLog(targetLog)) {
+        alert('Akses ditolak: Anda hanya dapat mengubah atau menghapus data log yang Anda input sendiri.');
+        return;
+      }
 
       if (action === 'edit') {
         setEditingLog(targetLog);
@@ -434,8 +483,8 @@ export const DataTab: React.FC = () => {
             orderable: false,
             searchable: false,
             render: (_data: any, _type: string, row: PassBoxLog) => {
-              const canModify = isAdmin || isSpv || row.user_id === user?.id;
-              if (!canModify) return '<span class="text-slate-300">-</span>';
+              const canModify = canUserModifyLog(row);
+              if (!canModify) return '<span class="text-slate-300 font-bold" title="Hanya pembuat data atau Admin yang dapat mengubah">-</span>';
               return `
                 <div class="flex items-center justify-center space-x-1">
                   <button type="button" data-dt-action="edit" data-id="${row.id}" class="p-1.5 text-slate-600 hover:text-sky-600 hover:bg-sky-50 rounded transition cursor-pointer" title="Edit Log">
@@ -480,7 +529,7 @@ export const DataTab: React.FC = () => {
         console.warn('DataTable redraw notice:', err);
       }
     }
-  }, [filteredLogs, loading, isAdmin, isSpv, user?.id]);
+  }, [filteredLogs, loading, isAdmin, isSpv, user?.id, user?.full_name, user?.username]);
 
   useEffect(() => {
     return () => {
@@ -828,7 +877,7 @@ export const DataTab: React.FC = () => {
               </div>
             ) : (
               filteredLogs.map((log, idx) => {
-                const canModify = isAdmin || isSpv || log.user_id === user?.id;
+                const canModify = canUserModifyLog(log);
                 const kat = log.kategori_pro || (log.pass_box.toLowerCase().includes('pm') ? 'PM' : 'RM');
 
                 return (
@@ -876,7 +925,7 @@ export const DataTab: React.FC = () => {
                         <span>Diinput oleh: <strong className="text-slate-700">{log.user_name}</strong></span>
                       </div>
 
-                      {canModify && (
+                      {canModify ? (
                         <div className="flex items-center space-x-1">
                           <button
                             onClick={() => setEditingLog(log)}
@@ -893,6 +942,8 @@ export const DataTab: React.FC = () => {
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         </div>
+                      ) : (
+                        <span className="text-slate-300 text-xs font-bold px-1.5" title="Hanya pembuat data atau Admin yang dapat mengubah">-</span>
                       )}
                     </div>
                   </div>
