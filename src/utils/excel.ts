@@ -27,13 +27,11 @@ export function exportLogsToExcel(logs: PassBoxLog[], filenamePrefix = 'Laporan_
     ]);
   });
 
-  // Summary row
   detailAoa.push([]);
   detailAoa.push(['', 'TOTAL CATATAN DOKUMEN', logs.length, '', '', '']);
 
   const wsDetail = XLSX.utils.aoa_to_sheet(detailAoa);
 
-  // Column widths
   wsDetail['!cols'] = [
     { wch: 6 },  // NO
     { wch: 22 }, // NO PRO
@@ -43,7 +41,6 @@ export function exportLogsToExcel(logs: PassBoxLog[], filenamePrefix = 'Laporan_
     { wch: 22 }, // WAKTU SISTEM
   ];
 
-  // Merge title banner
   wsDetail['!merges'] = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
     { s: { r: 1, c: 0 }, e: { r: 1, c: 5 } },
@@ -162,6 +159,91 @@ export function exportLogsToExcel(logs: PassBoxLog[], filenamePrefix = 'Laporan_
   ];
 
   XLSX.utils.book_append_sheet(workbook, wsDaily, 'Tren Harian');
+
+  // ==========================================
+  // SHEET 4: ANALISIS JAM SIBUK & BEBAN SHIFT
+  // ==========================================
+  const hoursCount = new Array(24).fill(0);
+  let shift1 = 0; // 07:00 - 15:00
+  let shift2 = 0; // 15:00 - 23:00
+  let shift3 = 0; // 23:00 - 07:00
+
+  logs.forEach(l => {
+    try {
+      const h = new Date(l.created_at).getHours();
+      if (h >= 0 && h < 24) {
+        hoursCount[h] += 1;
+      }
+      if (h >= 7 && h < 15) {
+        shift1 += 1;
+      } else if (h >= 15 && h < 23) {
+        shift2 += 1;
+      } else {
+        shift3 += 1;
+      }
+    } catch {
+      // ignore
+    }
+  });
+
+  const maxVal = Math.max(...hoursCount, 0);
+  const peakHourIdx = maxVal > 0 ? hoursCount.indexOf(maxVal) : -1;
+  const peakHourDesc = peakHourIdx >= 0 
+    ? `${String(peakHourIdx).padStart(2, '0')}:00 - ${String(peakHourIdx + 1).padStart(2, '0')}:00` 
+    : '-';
+
+  const hourlyAoa: any[][] = [
+    ['PT DIAMOND FOOD INDONESIA TBK'],
+    ['ANALISIS JAM SIBUK & DISTRIBUSI BEBAN SHIFT PASS BOX'],
+    [`Jam Puncak Operasional Terdeteksi: Pukul ${peakHourDesc} (${maxVal} Transaksi)`],
+    [],
+    ['RINGKASAN DISTRIBUSI SHIFT KERJA'],
+    ['NAMA SHIFT', 'RENTANG WAKTU', 'JUMLAH TRANSAKSI', 'PORSI VOLUME (%)'],
+    ['Shift 1 (Pagi)', '07:00 - 15:00 WIB', shift1, logs.length > 0 ? ((shift1 / logs.length) * 100).toFixed(1) + '%' : '0%'],
+    ['Shift 2 (Sore)', '15:00 - 23:00 WIB', shift2, logs.length > 0 ? ((shift2 / logs.length) * 100).toFixed(1) + '%' : '0%'],
+    ['Shift 3 (Malam)', '23:00 - 07:00 WIB', shift3, logs.length > 0 ? ((shift3 / logs.length) * 100).toFixed(1) + '%' : '0%'],
+    [],
+    ['DETAIL DISTRIBUSI PER JAM (00:00 - 23:00)'],
+    ['NO', 'RENTANG JAM', 'JUMLAH INPUT', 'PERSENTASE (%)', 'STATUS KEPADATAN'],
+  ];
+
+  hoursCount.forEach((cnt, h) => {
+    const hourLabel = `${String(h).padStart(2, '0')}:00 - ${String(h + 1).padStart(2, '0')}:00`;
+    const pct = logs.length > 0 ? ((cnt / logs.length) * 100).toFixed(1) + '%' : '0%';
+    const status = h === peakHourIdx && cnt > 0 
+      ? '★ JAM PUNCAK (PEAK)' 
+      : cnt >= 5 
+      ? 'Padat' 
+      : cnt > 0 
+      ? 'Normal' 
+      : 'Sepi / Tidak ada';
+
+    hourlyAoa.push([
+      h + 1,
+      hourLabel,
+      cnt,
+      pct,
+      status,
+    ]);
+  });
+
+  const wsHourly = XLSX.utils.aoa_to_sheet(hourlyAoa);
+  wsHourly['!cols'] = [
+    { wch: 6 },
+    { wch: 22 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 26 },
+  ];
+  wsHourly['!merges'] = [
+    { s: { r: 0, c: 0 }, e: { r: 0, c: 4 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 4 } },
+    { s: { r: 2, c: 0 }, e: { r: 2, c: 4 } },
+    { s: { r: 4, c: 0 }, e: { r: 4, c: 3 } },
+    { s: { r: 10, c: 0 }, e: { r: 10, c: 4 } },
+  ];
+
+  XLSX.utils.book_append_sheet(workbook, wsHourly, 'Analisis Jam Sibuk');
 
   // Generate and download workbook file
   const todayStr = new Date().toISOString().split('T')[0];

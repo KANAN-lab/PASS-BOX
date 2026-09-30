@@ -8,7 +8,9 @@ import {
   TrendingUp, 
   PieChart as PieIcon, 
   UserCheck, 
-  RefreshCw
+  RefreshCw,
+  Clock,
+  Zap
 } from 'lucide-react';
 import Chart, { type ChartOptions } from 'chart.js/auto';
 
@@ -30,8 +32,11 @@ export const RekapTab: React.FC = () => {
   // Canvas refs for Chart.js
   const trendCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const donutCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const hourlyCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
   const trendChartInstance = useRef<Chart | null>(null);
   const donutChartInstance = useRef<Chart | null>(null);
+  const hourlyChartInstance = useRef<Chart | null>(null);
 
   // Load logs
   const fetchLogs = async () => {
@@ -138,7 +143,6 @@ export const RekapTab: React.FC = () => {
   const dailyStats = useMemo(() => {
     const countsByDate = new Map<string, number>();
 
-    // Sort ascending for chronological trend
     const sorted = [...filteredLogs].sort((a, b) => a.tanggal.localeCompare(b.tanggal));
     sorted.forEach(l => {
       countsByDate.set(l.tanggal, (countsByDate.get(l.tanggal) || 0) + 1);
@@ -155,13 +159,52 @@ export const RekapTab: React.FC = () => {
     return { labels, counts, totalDays: countsByDate.size };
   }, [filteredLogs]);
 
+  // Hourly & Shift Statistics for Jam Sibuk
+  const hourlyStats = useMemo(() => {
+    const hours = new Array(24).fill(0);
+    const shifts = { shift1: 0, shift2: 0, shift3: 0 };
+
+    filteredLogs.forEach(l => {
+      try {
+        const d = new Date(l.created_at);
+        const h = d.getHours();
+        if (h >= 0 && h < 24) {
+          hours[h] += 1;
+        }
+        if (h >= 7 && h < 15) {
+          shifts.shift1 += 1;
+        } else if (h >= 15 && h < 23) {
+          shifts.shift2 += 1;
+        } else {
+          shifts.shift3 += 1;
+        }
+      } catch {
+        // ignore
+      }
+    });
+
+    const maxVal = Math.max(...hours, 0);
+    const peakHour = maxVal > 0 ? hours.indexOf(maxVal) : -1;
+    const peakHourStr = peakHour >= 0
+      ? `${String(peakHour).padStart(2, '0')}:00 - ${String(peakHour + 1).padStart(2, '0')}:00`
+      : 'Belum ada data';
+
+    return {
+      hours,
+      shifts,
+      maxVal,
+      peakHour,
+      peakHourStr,
+    };
+  }, [filteredLogs]);
+
   // Executive Metrics
   const totalVolume = filteredLogs.length;
   const activeCheckers = summaries.length;
   const topChecker = summaries[0]?.checker_name || '-';
   const avgPerDay = dailyStats.totalDays > 0 ? (totalVolume / dailyStats.totalDays).toFixed(1) : '0';
 
-  // Initialize & Update Chart.js Trend
+  // 1. Initialize & Update Chart.js Trend Line
   useEffect(() => {
     if (!trendCanvasRef.current) return;
 
@@ -175,7 +218,6 @@ export const RekapTab: React.FC = () => {
     const labels = dailyStats.labels.length > 0 ? dailyStats.labels : ['Belum ada data'];
     const dataPoints = dailyStats.counts.length > 0 ? dailyStats.counts : [0];
 
-    // Create subtle gradient for area fill
     const gradient = ctx.createLinearGradient(0, 0, 0, 260);
     gradient.addColorStop(0, 'rgba(2, 132, 199, 0.22)');
     gradient.addColorStop(1, 'rgba(2, 132, 199, 0.01)');
@@ -249,7 +291,7 @@ export const RekapTab: React.FC = () => {
     };
   }, [dailyStats]);
 
-  // Initialize & Update Chart.js Donut (Checker distribution)
+  // 2. Initialize & Update Chart.js Donut (Checker distribution)
   useEffect(() => {
     if (!donutCanvasRef.current) return;
 
@@ -323,6 +365,89 @@ export const RekapTab: React.FC = () => {
       donutChartInstance.current?.destroy();
     };
   }, [summaries, totalVolume]);
+
+  // 3. Initialize & Update Chart.js Hourly Bar Chart (Jam Sibuk)
+  useEffect(() => {
+    if (!hourlyCanvasRef.current) return;
+
+    if (hourlyChartInstance.current) {
+      hourlyChartInstance.current.destroy();
+    }
+
+    const ctx = hourlyCanvasRef.current.getContext('2d');
+    if (!ctx) return;
+
+    // Tampilkan jam operasional aktif (06:00 s/d 22:00)
+    const hoursToDisplay = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22];
+    const labels = hoursToDisplay.map(h => `${String(h).padStart(2, '0')}:00`);
+    const dataPoints = hoursToDisplay.map(h => hourlyStats.hours[h]);
+    
+    // Highlight jam puncak dengan warna amber emas
+    const bgColors = hoursToDisplay.map(h => 
+      h === hourlyStats.peakHour && hourlyStats.hours[h] > 0 ? '#f59e0b' : '#0284c7'
+    );
+
+    hourlyChartInstance.current = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Transaksi Pass Box',
+            data: dataPoints,
+            backgroundColor: bgColors,
+            borderRadius: 6,
+            borderSkipped: false,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#0f172a',
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              title: (items) => `Rentang Pukul ${items[0].label}`,
+              label: (item) => {
+                const hourNum = hoursToDisplay[item.dataIndex];
+                const isPeak = hourNum === hourlyStats.peakHour;
+                return ` Volume: ${item.formattedValue} transaksi${isPeak ? ' (★ JAM SIBUK / PEAK)' : ''}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: {
+              font: { size: 10 },
+              color: '#64748b',
+            },
+          },
+          y: {
+            beginAtZero: true,
+            suggestedMax: Math.max(...dataPoints, 4) + 1,
+            ticks: {
+              stepSize: 1,
+              font: { size: 10 },
+              color: '#64748b',
+            },
+            grid: {
+              color: '#f1f5f9',
+            },
+          },
+        },
+      },
+    });
+
+    return () => {
+      hourlyChartInstance.current?.destroy();
+    };
+  }, [hourlyStats]);
 
   const activePeriodText = startDate && endDate
     ? `${formatDateIndo(startDate)} s/d ${formatDateIndo(endDate)}`
@@ -499,6 +624,121 @@ export const RekapTab: React.FC = () => {
 
           <div className="h-64 sm:h-72 w-full relative flex items-center justify-center">
             <canvas ref={donutCanvasRef} />
+          </div>
+        </div>
+      </div>
+
+      {/* NEW: Analisis Jam Sibuk & Beban Shift Section */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm space-y-4">
+        {/* Header with Peak Hour Highlight Badge */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-slate-100 pb-3">
+          <div>
+            <h2 className="text-sm sm:text-base font-bold text-slate-800 flex items-center space-x-1.5">
+              <Clock className="w-4 h-4 text-amber-600" />
+              <span>Analisis Jam Sibuk & Beban Shift (Cleanroom Traffic)</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Distribusi frekuensi perpindahan material melalui pass box per jam kerja
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-200 text-amber-800 px-3 py-1.5 rounded-lg text-xs font-bold">
+              <Zap className="w-3.5 h-3.5 text-amber-600" />
+              <span>Jam Paling Sibuk: {hourlyStats.peakHourStr} ({hourlyStats.maxVal} Transaksi)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3 Shift Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Shift 1 */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700">Shift 1 (Pagi)</span>
+              <span className="text-[10px] bg-sky-100 text-sky-800 font-semibold px-2 py-0.5 rounded">
+                07:00 - 15:00
+              </span>
+            </div>
+            <div className="flex items-baseline space-x-1.5">
+              <span className="text-xl font-extrabold text-slate-900">{hourlyStats.shifts.shift1}</span>
+              <span className="text-xs text-slate-500">transaksi</span>
+              <span className="text-xs font-bold text-sky-600 ml-auto">
+                {totalVolume > 0 ? ((hourlyStats.shifts.shift1 / totalVolume) * 100).toFixed(1) : 0}%
+              </span>
+            </div>
+            <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+              <div 
+                className="bg-sky-600 h-full rounded-full" 
+                style={{ width: `${totalVolume > 0 ? (hourlyStats.shifts.shift1 / totalVolume) * 100 : 0}%` }} 
+              />
+            </div>
+          </div>
+
+          {/* Shift 2 */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700">Shift 2 (Sore)</span>
+              <span className="text-[10px] bg-indigo-100 text-indigo-800 font-semibold px-2 py-0.5 rounded">
+                15:00 - 23:00
+              </span>
+            </div>
+            <div className="flex items-baseline space-x-1.5">
+              <span className="text-xl font-extrabold text-slate-900">{hourlyStats.shifts.shift2}</span>
+              <span className="text-xs text-slate-500">transaksi</span>
+              <span className="text-xs font-bold text-indigo-600 ml-auto">
+                {totalVolume > 0 ? ((hourlyStats.shifts.shift2 / totalVolume) * 100).toFixed(1) : 0}%
+              </span>
+            </div>
+            <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+              <div 
+                className="bg-indigo-600 h-full rounded-full" 
+                style={{ width: `${totalVolume > 0 ? (hourlyStats.shifts.shift2 / totalVolume) * 100 : 0}%` }} 
+              />
+            </div>
+          </div>
+
+          {/* Shift 3 */}
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-700">Shift 3 (Malam)</span>
+              <span className="text-[10px] bg-purple-100 text-purple-800 font-semibold px-2 py-0.5 rounded">
+                23:00 - 07:00
+              </span>
+            </div>
+            <div className="flex items-baseline space-x-1.5">
+              <span className="text-xl font-extrabold text-slate-900">{hourlyStats.shifts.shift3}</span>
+              <span className="text-xs text-slate-500">transaksi</span>
+              <span className="text-xs font-bold text-purple-600 ml-auto">
+                {totalVolume > 0 ? ((hourlyStats.shifts.shift3 / totalVolume) * 100).toFixed(1) : 0}%
+              </span>
+            </div>
+            <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+              <div 
+                className="bg-purple-600 h-full rounded-full" 
+                style={{ width: `${totalVolume > 0 ? (hourlyStats.shifts.shift3 / totalVolume) * 100 : 0}%` }} 
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Hourly Histogram Chart */}
+        <div className="pt-2">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-700">Histogram Frekuensi Per Jam (06:00 - 22:00)</span>
+            <div className="flex items-center space-x-3 text-[11px] text-slate-500">
+              <span className="flex items-center space-x-1">
+                <span className="w-2.5 h-2.5 rounded bg-sky-600 inline-block" />
+                <span>Volume Jam Normal</span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <span className="w-2.5 h-2.5 rounded bg-amber-500 inline-block" />
+                <span className="font-bold text-amber-700">Jam Puncak (Peak)</span>
+              </span>
+            </div>
+          </div>
+          <div className="h-52 sm:h-60 w-full relative">
+            <canvas ref={hourlyCanvasRef} />
           </div>
         </div>
       </div>
