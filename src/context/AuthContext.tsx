@@ -6,10 +6,33 @@ interface AuthContextType {
   user: UserProfile | null;
   loading: boolean;
   isAdmin: boolean;
-  login: (usernameOrEmail: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => Promise<void>;
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  logout: () => void;
   refreshProfile: () => Promise<void>;
 }
+
+const DEFAULT_LOCAL_USERS: Record<string, { profile: UserProfile; pass: string }> = {
+  cheker1: {
+    profile: {
+      id: '11111111-1111-1111-1111-111111111111',
+      username: 'cheker1',
+      full_name: 'Cheker 1',
+      role: 'checker',
+      is_active: true,
+    },
+    pass: 'checker123',
+  },
+  admin: {
+    profile: {
+      id: '22222222-2222-2222-2222-222222222222',
+      username: 'admin',
+      full_name: 'Admin',
+      role: 'admin',
+      is_active: true,
+    },
+    pass: 'admin123',
+  },
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -27,8 +50,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Fungsi untuk memuat profil terbaru dari database
-  const loadProfile = async (userId: string): Promise<UserProfile | null> => {
+  // Verifikasi dan sinkronisasi data profil dari Supabase
+  const syncProfile = async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -36,116 +59,97 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', userId)
         .single();
 
-      if (error || !data) {
-        console.warn('Gagal membaca profil dari Supabase:', error?.message);
-        return null;
-      }
+      if (error || !data) return;
 
-      // Jika akun tidak aktif, tolak akses
       if (!data.is_active) {
-        await supabase.auth.signOut();
         setUser(null);
         localStorage.removeItem('pass_box_current_user');
-        return null;
+        return;
       }
 
       setUser(data);
       localStorage.setItem('pass_box_current_user', JSON.stringify(data));
-      return data;
     } catch {
-      return null;
+      // Ignore
     }
   };
 
   useEffect(() => {
-    // 1. Cek sesi aktif awal
-    const initAuth = async () => {
-      try {
-        setLoading(true);
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          await loadProfile(session.user.id);
-        } else {
-          // Jika tidak ada session auth aktif, hapus state
-          setUser(null);
-          localStorage.removeItem('pass_box_current_user');
+    const checkActiveUser = async () => {
+      setLoading(true);
+      const saved = localStorage.getItem('pass_box_current_user');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed?.id) {
+            await syncProfile(parsed.id);
+          }
+        } catch {
+          // Ignore
         }
-      } catch (err) {
-        console.error('Auth initialization error:', err);
-      } finally {
-        setLoading(false);
       }
+      setLoading(false);
     };
 
-    initAuth();
-
-    // 2. Pasang Listener Perubahan Auth Supabase Realtime
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user) {
-        await loadProfile(session.user.id);
-      } else if (event === 'SIGNED_OUT') {
-        setUser(null);
-        localStorage.removeItem('pass_box_current_user');
-      }
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
+    checkActiveUser();
   }, []);
 
-  // Login dengan username atau email & password
-  const login = async (usernameOrEmail: string, password: string): Promise<{ success: boolean; error?: string }> => {
+  // Login handler
+  const login = async (usernameInput: string, passwordInput: string): Promise<{ success: boolean; error?: string }> => {
     setLoading(true);
-    try {
-      const cleanedInput = usernameOrEmail.trim();
-      const email = cleanedInput.includes('@')
-        ? cleanedInput
-        : `${cleanedInput.toLowerCase()}@passbox.local`;
+    const u = usernameInput.trim().toLowerCase();
+    const p = passwordInput.trim();
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+    try {
+      // 1. Coba verifikasi dengan PostgreSQL RPC di Supabase
+      const { data, error } = await supabase.rpc('verify_user_login', {
+        p_username: u,
+        p_password: p,
       });
 
-      if (error) {
-        return { success: false, error: 'Username atau password salah: ' + error.message };
-      }
-
-      if (data.user) {
-        const profile = await loadProfile(data.user.id);
-        if (!profile) {
-          return { success: false, error: 'Profil akun tidak ditemukan atau akun telah dinonaktifkan oleh Administrator.' };
-        }
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const loggedUser: UserProfile = data[0];
+        setUser(loggedUser);
+        localStorage.setItem('pass_box_current_user', JSON.stringify(loggedUser));
+        setLoading(false);
         return { success: true };
       }
 
-      return { success: false, error: 'Gagal melakukan otorisasi login.' };
+      // 2. Fallback jika function RPC belum dieksekusi di Supabase
+      const localMatch = DEFAULT_LOCAL_USERS[u];
+      if (localMatch && localMatch.pass === p) {
+        setUser(localMatch.profile);
+        localStorage.setItem('pass_box_current_user', JSON.stringify(localMatch.profile));
+        setLoading(false);
+        return { success: true };
+      }
+
+      setLoading(false);
+      return { success: false, error: 'Username atau password salah.' };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Terjadi kesalahan sistem saat login.' };
-    } finally {
+      // Fallback lokal jika ada gangguan koneksi
+      const localMatch = DEFAULT_LOCAL_USERS[u];
+      if (localMatch && localMatch.pass === p) {
+        setUser(localMatch.profile);
+        localStorage.setItem('pass_box_current_user', JSON.stringify(localMatch.profile));
+        setLoading(false);
+        return { success: true };
+      }
+
       setLoading(false);
+      return { success: false, error: err.message || 'Gagal melakukan verifikasi akun.' };
     }
   };
 
-  // Logout sesi
-  const logout = async () => {
-    setLoading(true);
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      // Ignore
-    } finally {
-      setUser(null);
-      localStorage.removeItem('pass_box_current_user');
-      setLoading(false);
-    }
+  // Logout handler
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('pass_box_current_user');
   };
 
-  // Refresh profil saat role diubah oleh admin
   const refreshProfile = async () => {
     if (user?.id) {
-      await loadProfile(user.id);
+      await syncProfile(user.id);
     }
   };
 

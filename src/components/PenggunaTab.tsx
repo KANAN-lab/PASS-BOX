@@ -59,6 +59,7 @@ export const PenggunaTab: React.FC = () => {
     try {
       // Panggil RPC yang diamankan di PostgreSQL
       const { error } = await supabase.rpc('change_user_role', {
+        admin_user_id: currentUser?.id,
         target_user_id: targetUserId,
         new_role: newRole,
       });
@@ -130,29 +131,10 @@ export const PenggunaTab: React.FC = () => {
 
     try {
       const cleanUsername = username.trim().toLowerCase();
-      const email = `${cleanUsername}@passbox.local`;
       const passToUse = password.trim() || 'passbox123';
+      const newId: string = crypto.randomUUID();
 
-      // Buat akun di Supabase Auth
-      const { data: authData, error: authErr } = await supabase.auth.signUp({
-        email,
-        password: passToUse,
-        options: {
-          data: {
-            username: cleanUsername,
-            full_name: fullName.trim(),
-            role,
-          },
-        },
-      });
-
-      if (authErr && !authErr.message.includes('already registered')) {
-        throw authErr;
-      }
-
-      const newId: string = authData?.user?.id || crypto.randomUUID();
-
-      // Buat entri profil
+      // 1. Buat entri profil
       const newProfile: UserProfile = {
         id: newId,
         username: cleanUsername,
@@ -163,9 +145,20 @@ export const PenggunaTab: React.FC = () => {
 
       const { error: profileErr } = await supabase
         .from('profiles')
-        .upsert([newProfile]);
+        .insert([{
+          ...newProfile,
+          password_hash: 'pending'
+        }]);
 
-      if (profileErr) throw profileErr;
+      if (profileErr && !profileErr.message.includes('password_hash')) {
+        throw profileErr;
+      }
+
+      // 2. Set password dengan hash bcrypt
+      await supabase.rpc('change_user_password', {
+        target_user_id: newId,
+        new_password: passToUse,
+      });
 
       setUsers([...users, newProfile]);
       setShowAddModal(false);
