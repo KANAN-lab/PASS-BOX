@@ -18,6 +18,7 @@ delete from auth.users where id in ('11111111-1111-1111-1111-111111111111', '222
 -- 3. Hapus tabel lama untuk clean slate
 drop table if exists public.pass_box_logs cascade;
 drop table if exists public.profiles cascade;
+drop table if exists public.pass_boxes cascade;
 drop type if exists user_role cascade;
 
 -- 4. Buat ENUM Role
@@ -66,10 +67,10 @@ on conflict (name) do update set is_active = excluded.is_active;
 
 
 -- 7. Indexes untuk Kecepatan Query, Sort & Filter
-create index idx_pass_box_logs_tanggal on public.pass_box_logs(tanggal desc);
-create index idx_pass_box_logs_no_pro on public.pass_box_logs(no_pro);
-create index idx_pass_box_logs_user_id on public.pass_box_logs(user_id);
-create index idx_pass_box_logs_created_at on public.pass_box_logs(created_at desc);
+create index if not exists idx_pass_box_logs_tanggal on public.pass_box_logs(tanggal desc);
+create index if not exists idx_pass_box_logs_no_pro on public.pass_box_logs(no_pro);
+create index if not exists idx_pass_box_logs_user_id on public.pass_box_logs(user_id);
+create index if not exists idx_pass_box_logs_created_at on public.pass_box_logs(created_at desc);
 
 -- 8. GRANT PRIVILEGES (Mencegah Permission Denied Error 42501)
 grant usage on schema public to postgres, anon, authenticated, service_role;
@@ -261,60 +262,84 @@ alter table public.profiles enable row level security;
 alter table public.pass_box_logs enable row level security;
 
 -- Policies untuk PROFILES:
+drop policy if exists "Allow read profiles" on public.profiles;
 create policy "Allow read profiles"
   on public.profiles for select
   using (true);
 
+drop policy if exists "Allow insert profiles" on public.profiles;
 create policy "Allow insert profiles"
   on public.profiles for insert
   with check (true);
 
+drop policy if exists "Allow update profiles" on public.profiles;
 create policy "Allow update profiles"
   on public.profiles for update
   using (true);
 
+drop policy if exists "Allow delete profiles" on public.profiles;
 create policy "Allow delete profiles"
   on public.profiles for delete
   using (true);
 
 -- Policies untuk PASS_BOX_LOGS:
+drop policy if exists "Allow read pass_box_logs" on public.pass_box_logs;
 create policy "Allow read pass_box_logs"
   on public.pass_box_logs for select
   using (true);
 
+drop policy if exists "Allow insert pass_box_logs" on public.pass_box_logs;
 create policy "Allow insert pass_box_logs"
   on public.pass_box_logs for insert
   with check (true);
 
+drop policy if exists "Allow update pass_box_logs" on public.pass_box_logs;
 create policy "Allow update pass_box_logs"
   on public.pass_box_logs for update
   using (true);
 
+drop policy if exists "Allow delete pass_box_logs" on public.pass_box_logs;
 create policy "Allow delete pass_box_logs"
   on public.pass_box_logs for delete
   using (true);
 
 -- Policies untuk PASS_BOXES:
 alter table public.pass_boxes enable row level security;
+
+drop policy if exists "Allow read pass_boxes" on public.pass_boxes;
 create policy "Allow read pass_boxes"
   on public.pass_boxes for select
   using (true);
 
+drop policy if exists "Allow insert pass_boxes" on public.pass_boxes;
 create policy "Allow insert pass_boxes"
   on public.pass_boxes for insert
   with check (true);
 
+drop policy if exists "Allow update pass_boxes" on public.pass_boxes;
 create policy "Allow update pass_boxes"
   on public.pass_boxes for update
   using (true);
 
+drop policy if exists "Allow delete pass_boxes" on public.pass_boxes;
 create policy "Allow delete pass_boxes"
   on public.pass_boxes for delete
   using (true);
 
--- 13. Enable Supabase Realtime
-alter publication supabase_realtime add table public.pass_box_logs;
-alter publication supabase_realtime add table public.pass_boxes;
+-- 13. Enable Supabase Realtime (Aman dijalankan berulang kali tanpa error 42710)
+do $$
+begin
+  alter publication supabase_realtime add table public.pass_box_logs;
+exception
+  when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.pass_boxes;
+exception
+  when duplicate_object then null;
+end $$;
 
 
 -- 14. Seed Data Akun Default (Password terenkripsi Bcrypt):
