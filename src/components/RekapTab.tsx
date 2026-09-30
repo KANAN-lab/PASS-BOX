@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { PassBoxLog, CheckerSummary } from '../types';
 import { StatCard } from './StatCard';
 import { formatDateTimeIndo } from '../utils/excel';
-import { FileText } from 'lucide-react';
+import { FileText, Clock, UserCheck } from 'lucide-react';
 
 type PresetFilter = 'today' | '7days' | '30days' | 'all';
 
@@ -26,12 +26,10 @@ export const RekapTab: React.FC = () => {
         .order('created_at', { ascending: false });
 
       if (error || !data) {
-        // Fallback local storage
         const local = localStorage.getItem('local_pass_box_logs');
         if (local) {
           setLogs(JSON.parse(local));
         } else {
-          // Demo mock matching Screenshot 2
           setLogs([
             { id: 4, no_pro: 'Contoh', tanggal: '2026-09-30', pass_box: '1', user_id: '11111111-1111-1111-1111-111111111111', user_name: 'Cheker 1', created_at: '2026-09-30T10:19:00Z' },
             { id: 3, no_pro: '1059555', tanggal: '2026-09-30', pass_box: 'asbox 1 PM fani', user_id: '11111111-1111-1111-1111-111111111111', user_name: 'Cheker 1', created_at: '2026-09-30T10:18:00Z' },
@@ -51,7 +49,6 @@ export const RekapTab: React.FC = () => {
     fetchLogs();
   }, []);
 
-  // Preset button click handler
   const handleSelectPreset = (selected: PresetFilter) => {
     setPreset(selected);
     const now = new Date();
@@ -76,7 +73,6 @@ export const RekapTab: React.FC = () => {
     }
   };
 
-  // Filter logs by selected date range
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
       if (startDate && log.tanggal < startDate) return false;
@@ -85,7 +81,6 @@ export const RekapTab: React.FC = () => {
     });
   }, [logs, startDate, endDate]);
 
-  // Aggregate logs per checker
   const summaries = useMemo(() => {
     const map = new Map<string, { total: number; dates: Set<string>; lastInput: string; userId: string }>();
 
@@ -118,11 +113,9 @@ export const RekapTab: React.FC = () => {
       });
     });
 
-    // Urutkan berdasarkan total input terbanyak
     return result.sort((a, b) => b.total_input - a.total_input);
   }, [filteredLogs]);
 
-  // Max total input for progress bar calculation
   const maxTotal = useMemo(() => {
     if (summaries.length === 0) return 1;
     return Math.max(...summaries.map(s => s.total_input), 1);
@@ -137,66 +130,65 @@ export const RekapTab: React.FC = () => {
     : 'Semua Waktu';
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 py-6 space-y-6">
-      {/* Top Header: Title & Subtitle + Top-Right Stat Card */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+    <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      {/* Top Header: Title & Stat Card */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
             Rekap Per Checker
           </h1>
-          <p className="text-xs font-medium text-slate-500 mt-1">
+          <p className="text-xs font-medium text-slate-500 mt-0.5">
             Jumlah input data berdasarkan tanggal pada kolom Tanggal.
           </p>
         </div>
 
-        {/* Top-Right Metrics */}
-        <div>
-          <StatCard label="TOTAL PERIODE" value={filteredLogs.length} />
+        <div className="self-start sm:self-auto min-w-[140px]">
+          <StatCard label="TOTAL PERIODE" value={filteredLogs.length} accentColor="bg-indigo-600" />
         </div>
       </div>
 
-      {/* Main Card with Filters & Table */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-        {/* Filter Controls Row */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-          {/* Preset Buttons */}
-          <div className="flex items-center space-x-1.5 bg-slate-100 p-1 rounded-lg">
+      {/* Main Card */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm space-y-4">
+        {/* Filter Controls */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 border-b border-slate-100 pb-3.5">
+          {/* Preset Buttons Grid on Mobile */}
+          <div className="grid grid-cols-4 sm:flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
             <button
               onClick={() => handleSelectPreset('today')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+              className={`py-1.5 px-2.5 rounded-md text-[11px] sm:text-xs font-semibold text-center transition ${
                 preset === 'today'
                   ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Hari ini
             </button>
             <button
               onClick={() => handleSelectPreset('7days')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+              className={`py-1.5 px-2.5 rounded-md text-[11px] sm:text-xs font-semibold text-center transition ${
                 preset === '7days'
                   ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               7 hari
             </button>
             <button
               onClick={() => handleSelectPreset('30days')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+              className={`py-1.5 px-2.5 rounded-md text-[11px] sm:text-xs font-semibold text-center transition ${
                 preset === '30days'
                   ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               30 hari
             </button>
             <button
               onClick={() => handleSelectPreset('all')}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+              className={`py-1.5 px-2.5 rounded-md text-[11px] sm:text-xs font-semibold text-center transition ${
                 preset === 'all'
                   ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Semua
@@ -204,17 +196,17 @@ export const RekapTab: React.FC = () => {
           </div>
 
           {/* Date Range Inputs */}
-          <div className="flex items-center space-x-2 bg-slate-50 p-1.5 rounded-lg border border-slate-200 text-xs">
+          <div className="grid grid-cols-2 sm:flex items-center gap-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200 text-xs">
             <input
               type="date"
               value={startDate}
               onChange={(e) => {
                 setStartDate(e.target.value);
-                setPreset('all'); // Clear preset badge if manual edit
+                setPreset('all');
               }}
-              className="bg-white border border-slate-300 rounded px-2.5 py-1 text-slate-700 focus:outline-none"
+              className="h-8 bg-white border border-slate-300 rounded px-2 text-slate-700 focus:outline-none text-[11px]"
             />
-            <span className="text-slate-400 font-medium text-xs">s/d</span>
+            <span className="hidden sm:inline text-slate-400 font-medium text-xs text-center">s/d</span>
             <input
               type="date"
               value={endDate}
@@ -222,13 +214,55 @@ export const RekapTab: React.FC = () => {
                 setEndDate(e.target.value);
                 setPreset('all');
               }}
-              className="bg-white border border-slate-300 rounded px-2.5 py-1 text-slate-700 focus:outline-none"
+              className="h-8 bg-white border border-slate-300 rounded px-2 text-slate-700 focus:outline-none text-[11px]"
             />
           </div>
         </div>
 
-        {/* Rekap Table */}
-        <div className="overflow-x-auto rounded-lg border border-slate-200">
+        {/* 1. Mobile Cards View (block md:hidden) */}
+        <div className="block md:hidden space-y-2.5">
+          {summaries.length === 0 ? (
+            <div className="py-8 text-center text-slate-400 text-xs bg-slate-50 rounded-lg border border-dashed border-slate-200">
+              {loading ? 'Memuat rekap data...' : 'Tidak ada aktivitas data pada periode ini.'}
+            </div>
+          ) : (
+            summaries.map((item) => {
+              const percent = Math.round((item.total_input / maxTotal) * 100);
+
+              return (
+                <div key={item.checker_name} className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-extrabold text-slate-900 text-sm">{item.checker_name}</span>
+                    <span className="text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                      <UserCheck className="w-3 h-3 text-sky-600" />
+                      <span>{item.hari_aktif} Hari Aktif</span>
+                    </span>
+                  </div>
+
+                  {/* Progress Bar & Number */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-slate-500 font-medium text-[11px]">Total Kontribusi</span>
+                      <span className="font-bold text-sky-700">{item.total_input} input ({percent}%)</span>
+                    </div>
+                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                      <div className="bg-sky-600 h-full rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
+                    </div>
+                  </div>
+
+                  {/* Last Input */}
+                  <div className="flex items-center space-x-1.5 text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Terakhir input: <strong className="text-slate-700 font-mono">{formatDateTimeIndo(item.input_terakhir)}</strong></span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* 2. Desktop Table View (hidden md:block) */}
+        <div className="hidden md:block overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
@@ -282,7 +316,7 @@ export const RekapTab: React.FC = () => {
         </div>
 
         {/* Footer Note */}
-        <div className="pt-2 flex items-center space-x-1.5 text-xs text-slate-500">
+        <div className="pt-2 flex items-center space-x-1.5 text-[11px] sm:text-xs text-slate-500">
           <FileText className="w-3.5 h-3.5 text-slate-400" />
           <span>Periode: {activePeriodText}</span>
         </div>

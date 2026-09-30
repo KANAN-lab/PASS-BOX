@@ -12,7 +12,11 @@ import {
   Save, 
   Pencil, 
   Trash2, 
-  AlertCircle
+  AlertCircle,
+  Calendar,
+  Box,
+  User,
+  X
 } from 'lucide-react';
 
 export const DataTab: React.FC = () => {
@@ -50,7 +54,6 @@ export const DataTab: React.FC = () => {
         .order('id', { ascending: false });
 
       if (error) {
-        // Jika tabel belum dibuat di Supabase SQL Editor, gunakan local storage agar tidak crash
         console.warn('Supabase fetch notice:', error.message);
         setDbError(error.message);
         const local = localStorage.getItem('local_pass_box_logs');
@@ -104,8 +107,8 @@ export const DataTab: React.FC = () => {
       no_pro: noPro.trim(),
       tanggal,
       pass_box: passBox.trim(),
-      user_id: user?.id || '11111111-1111-1111-1111-111111111111',
-      user_name: user?.full_name || 'Cheker 1',
+      user_id: user?.id || null,
+      user_name: user?.full_name || user?.username || 'Cheker 1',
     };
 
     try {
@@ -116,10 +119,10 @@ export const DataTab: React.FC = () => {
         .single();
 
       if (error) {
-        // Fallback local persistence if Supabase table is not yet migrated
         const fallbackItem: PassBoxLog = {
           id: Date.now(),
           ...newEntry,
+          user_id: user?.id || '11111111-1111-1111-1111-111111111111',
           created_at: new Date().toISOString(),
         };
         const updated = [fallbackItem, ...logs];
@@ -161,7 +164,6 @@ export const DataTab: React.FC = () => {
         .eq('id', updatedLog.id);
 
       if (error) {
-        // Local fallback update
         const updated = logs.map(l => l.id === updatedLog.id ? { ...l, ...updatedLog } : l);
         setLogs(updated);
         localStorage.setItem('local_pass_box_logs', JSON.stringify(updated));
@@ -184,7 +186,6 @@ export const DataTab: React.FC = () => {
         .eq('id', id);
 
       if (error) {
-        // Local fallback delete
         const updated = logs.filter(l => l.id !== id);
         setLogs(updated);
         localStorage.setItem('local_pass_box_logs', JSON.stringify(updated));
@@ -221,47 +222,47 @@ export const DataTab: React.FC = () => {
   }, [logs, searchQuery, startDate, endDate]);
 
   return (
-    <div className="max-w-[1400px] mx-auto px-4 py-6 space-y-6">
+    <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
       {/* Alert if Supabase tables are pending */}
       {dbError && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start space-x-3 text-amber-800 text-xs shadow-sm">
-          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <span className="font-bold">Info Setup Database Supabase:</span> Tabel <code className="bg-amber-100 px-1 py-0.5 rounded font-mono text-amber-900">pass_box_logs</code> belum terdeteksi di Supabase project Anda. Aplikasi saat ini menggunakan local cache offline agar tetap dapat digunakan langsung. Jalankan script <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-semibold text-amber-900">supabase_setup.sql</code> di Supabase SQL Editor untuk mengaktifkan database cloud.
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 sm:p-4 flex items-start space-x-2.5 text-amber-800 text-xs shadow-sm">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-[11px] sm:text-xs">
+            <span className="font-bold">Info Database:</span> Tabel belum aktif di Supabase. Menjalankan mode offline lokal. Jalankan script <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-semibold text-amber-900">supabase_setup.sql</code> di Supabase SQL Editor.
           </div>
         </div>
       )}
 
-      {/* Header Top Section: Title & Subtitle + Top-Right Stat Cards */}
-      <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+      {/* Top Header Section: Title & Responsive Metric Cards */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
             Input Data Pass Box
           </h1>
-          <p className="text-xs font-medium text-slate-500 mt-1">
+          <p className="text-xs font-medium text-slate-500 mt-0.5">
             No Pro · Tanggal · Pass Box
           </p>
         </div>
 
-        {/* Top-Right Metrics */}
-        <div className="flex items-center space-x-3">
-          <StatCard label="TOTAL DATA" value={totalCount} />
-          <StatCard label="TANGGAL HARI INI" value={todayCount} />
+        {/* Metric Cards: 2 Columns on Mobile, Flex on Desktop */}
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
+          <StatCard label="TOTAL DATA" value={totalCount} accentColor="bg-slate-800" className="sm:min-w-[130px]" />
+          <StatCard label="TANGGAL HARI INI" value={todayCount} accentColor="bg-sky-500" className="sm:min-w-[130px]" />
         </div>
       </div>
 
-      {/* Main Grid: Left Form (1/3) & Right Table (2/3) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Input Data Form */}
-        <div className="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+      {/* Main Grid: Left Form (lg:col-span-4) & Right Data (lg:col-span-8) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
+        {/* Left Column: Form Input Data */}
+        <div className="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
           <div className="border-b border-slate-100 pb-3 mb-4">
-            <h2 className="text-base font-bold text-slate-800">Input Data</h2>
+            <h2 className="text-sm sm:text-base font-bold text-slate-800">Input Data</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Isi tiga kolom lalu tekan Simpan (Enter).
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-3.5 sm:space-y-4">
             {/* 1. NO PRO */}
             <div>
               <label className="block text-xs font-bold text-slate-700 uppercase mb-1 tracking-wider">
@@ -274,7 +275,7 @@ export const DataTab: React.FC = () => {
                 placeholder="Contoh: PRO-2026-0001"
                 value={noPro}
                 onChange={(e) => setNoPro(e.target.value)}
-                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition font-mono placeholder:font-sans placeholder:text-slate-400"
+                className="w-full h-11 px-3.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition font-mono placeholder:font-sans placeholder:text-slate-400"
               />
             </div>
 
@@ -283,15 +284,13 @@ export const DataTab: React.FC = () => {
               <label className="block text-xs font-bold text-slate-700 uppercase mb-1 tracking-wider">
                 2. TANGGAL
               </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  required
-                  value={tanggal}
-                  onChange={(e) => setTanggal(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition"
-                />
-              </div>
+              <input
+                type="date"
+                required
+                value={tanggal}
+                onChange={(e) => setTanggal(e.target.value)}
+                className="w-full h-11 px-3.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition bg-white"
+              />
             </div>
 
             {/* 3. PASS BOX */}
@@ -311,16 +310,16 @@ export const DataTab: React.FC = () => {
                     handleSubmit();
                   }
                 }}
-                className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition resize-none placeholder:text-slate-400"
+                className="w-full p-3 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition resize-none placeholder:text-slate-400"
               />
             </div>
 
             {/* Action Buttons */}
-            <div className="flex items-center space-x-2.5 pt-2">
+            <div className="flex items-center space-x-2 pt-1">
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex-1 flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-medium py-2.5 px-4 rounded-lg shadow-sm transition disabled:opacity-50 text-sm"
+                className="flex-1 h-11 flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-semibold rounded-lg shadow-sm transition disabled:opacity-50 text-sm"
               >
                 <Save className="w-4 h-4" />
                 <span>{submitting ? 'Menyimpan...' : 'Simpan Data'}</span>
@@ -329,22 +328,22 @@ export const DataTab: React.FC = () => {
               <button
                 type="button"
                 onClick={handleReset}
-                className="flex items-center justify-center space-x-1.5 border border-slate-300 hover:bg-slate-100 text-slate-700 font-medium py-2.5 px-3.5 rounded-lg transition text-sm"
+                className="h-11 px-4 flex items-center justify-center space-x-1.5 border border-slate-300 hover:bg-slate-100 text-slate-700 font-semibold rounded-lg transition text-sm"
                 title="Reset input"
               >
                 <RotateCcw className="w-4 h-4 text-slate-500" />
-                <span>Reset</span>
+                <span className="hidden sm:inline">Reset</span>
               </button>
             </div>
           </form>
         </div>
 
-        {/* Right Column: Daftar Data & Filters */}
-        <div className="lg:col-span-8 bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-          {/* Top row: Counter & Export Excel */}
+        {/* Right Column: Daftar Data, Filters, Table/Cards */}
+        <div className="lg:col-span-8 bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm space-y-3.5 sm:space-y-4">
+          {/* Top Header: Title & Export Excel */}
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
-              <h2 className="text-base font-bold text-slate-800">Daftar Data</h2>
+              <h2 className="text-sm sm:text-base font-bold text-slate-800">Daftar Data</h2>
               <span className="text-xs text-slate-500">{filteredLogs.length} baris</span>
             </div>
 
@@ -358,7 +357,7 @@ export const DataTab: React.FC = () => {
           </div>
 
           {/* Filter Bar: Search + Date Range */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
             {/* Search Input */}
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -367,40 +366,117 @@ export const DataTab: React.FC = () => {
                 placeholder="Cari No Pro, Pass Box, atau penginput..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3.5 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition"
+                className="w-full pl-9 pr-8 h-10 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition"
               />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
-            {/* Date Range Filter */}
-            <div className="flex items-center space-x-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200 text-xs">
+            {/* Date Range Inputs */}
+            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200 text-xs">
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="bg-white border border-slate-300 rounded px-2 py-1 text-slate-700 focus:outline-none"
+                className="h-8 bg-white border border-slate-300 rounded px-2 text-slate-700 focus:outline-none text-[11px]"
                 title="Tanggal Awal"
               />
-              <span className="text-slate-400 font-medium text-[11px]">s/d</span>
+              <span className="hidden sm:inline text-slate-400 font-medium text-[11px] text-center">s/d</span>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="bg-white border border-slate-300 rounded px-2 py-1 text-slate-700 focus:outline-none"
+                className="h-8 bg-white border border-slate-300 rounded px-2 text-slate-700 focus:outline-none text-[11px]"
                 title="Tanggal Akhir"
               />
-              {(startDate || endDate) && (
-                <button
-                  onClick={() => { setStartDate(''); setEndDate(''); }}
-                  className="text-slate-400 hover:text-slate-600 text-[10px] underline ml-1 px-1"
-                >
-                  Clear
-                </button>
-              )}
             </div>
+            {(startDate || endDate) && (
+              <button
+                onClick={() => { setStartDate(''); setEndDate(''); }}
+                className="text-slate-400 hover:text-slate-600 text-[11px] underline px-1 text-center"
+              >
+                Reset Filter
+              </button>
+            )}
           </div>
 
-          {/* Table Container */}
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
+          {/* 1. MOBILE VIEW: High-Density Industrial Card List (block md:hidden) */}
+          <div className="block md:hidden space-y-2.5">
+            {filteredLogs.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                {loading ? 'Memuat data...' : 'Tidak ada data yang sesuai filter.'}
+              </div>
+            ) : (
+              filteredLogs.map((log, idx) => {
+                const canModify = isAdmin || log.user_id === user?.id;
+
+                return (
+                  <div
+                    key={log.id}
+                    className="bg-white border border-slate-200/90 rounded-xl p-3 shadow-xs hover:border-slate-300 transition space-y-2"
+                  >
+                    {/* Top Row: Index + No Pro + Date Badge */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[11px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                          #{idx + 1}
+                        </span>
+                        <span className="font-extrabold text-slate-900 text-sm font-mono tracking-tight">
+                          {log.no_pro}
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-1 text-sky-700 bg-sky-50 border border-sky-100 px-2 py-0.5 rounded text-[11px] font-semibold">
+                        <Calendar className="w-3 h-3 text-sky-500" />
+                        <span>{formatDateIndo(log.tanggal)}</span>
+                      </div>
+                    </div>
+
+                    {/* Middle: Pass Box Description */}
+                    <div className="bg-slate-50/80 rounded-lg p-2 text-xs text-slate-800 border border-slate-100 flex items-start space-x-1.5">
+                      <Box className="w-3.5 h-3.5 text-slate-400 flex-shrink-0 mt-0.5" />
+                      <span className="font-medium break-words leading-relaxed">{log.pass_box}</span>
+                    </div>
+
+                    {/* Bottom: Submitter & Actions */}
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-100 text-xs">
+                      <div className="flex items-center space-x-1 text-slate-500 text-[11px]">
+                        <User className="w-3 h-3 text-slate-400" />
+                        <span>Diinput oleh: <strong className="text-slate-700">{log.user_name}</strong></span>
+                      </div>
+
+                      {canModify && (
+                        <div className="flex items-center space-x-1">
+                          <button
+                            onClick={() => setEditingLog(log)}
+                            className="p-1.5 text-slate-600 hover:text-sky-600 hover:bg-sky-50 rounded-lg transition"
+                            title="Edit"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(log.id)}
+                            className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+                            title="Hapus"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* 2. DESKTOP VIEW: Full Tabular Grid (hidden md:block) */}
+          <div className="hidden md:block overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">

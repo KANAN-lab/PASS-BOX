@@ -200,18 +200,18 @@ export const PenggunaTab: React.FC = () => {
       )}
 
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center space-x-2">
-            <Users className="w-6 h-6 text-sky-600" />
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center space-x-2">
+            <Users className="w-5 h-5 sm:w-6 sm:h-6 text-sky-600" />
             <span>Manajemen Pengguna & Otorisasi</span>
           </h1>
-          <p className="text-xs font-medium text-slate-500 mt-1">
+          <p className="text-xs font-medium text-slate-500 mt-0.5">
             Hanya Administrator yang memiliki wewenang mengubah role dan status aktif pengguna.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 self-start sm:self-auto">
           <button
             onClick={fetchUsers}
             disabled={loading}
@@ -223,7 +223,7 @@ export const PenggunaTab: React.FC = () => {
 
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center space-x-2 bg-sky-600 hover:bg-sky-700 text-white px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition"
+            className="flex items-center space-x-2 bg-sky-600 hover:bg-sky-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm transition"
           >
             <UserPlus className="w-4 h-4" />
             <span>Tambah Pengguna</span>
@@ -231,8 +231,8 @@ export const PenggunaTab: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Table Card */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
+      {/* Main Container */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm space-y-4">
         {/* Search */}
         <div className="relative max-w-sm">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -241,12 +241,94 @@ export const PenggunaTab: React.FC = () => {
             placeholder="Cari nama, username, atau role..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3.5 py-2 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
+            className="w-full pl-9 pr-3.5 h-10 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500"
           />
         </div>
 
-        {/* Users Table */}
-        <div className="overflow-x-auto rounded-lg border border-slate-200">
+        {/* 1. Mobile Cards List (block md:hidden) */}
+        <div className="block md:hidden space-y-2.5">
+          {filteredUsers.length === 0 ? (
+            <div className="py-8 text-center text-slate-400 text-xs bg-slate-50 rounded-lg border border-dashed border-slate-200">
+              {loading ? 'Memuat data pengguna...' : 'Tidak ada data pengguna.'}
+            </div>
+          ) : (
+            filteredUsers.map((u) => {
+              const isCurrent = u.id === currentUser?.id;
+              const isProcessing = updatingId === u.id;
+
+              return (
+                <div key={u.id} className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 space-y-3">
+                  {/* Top: Name, Status & You Badge */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-extrabold text-slate-900 text-sm flex items-center space-x-1.5">
+                        <span>{u.full_name}</span>
+                        {isCurrent && (
+                          <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-bold">
+                            (Anda)
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-slate-500 font-mono">@{u.username}</span>
+                    </div>
+
+                    <span
+                      className={`inline-flex items-center space-x-1 text-xs font-semibold px-2 py-0.5 rounded-full ${
+                        u.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {u.is_active ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                      <span>{u.is_active ? 'Aktif' : 'Nonaktif'}</span>
+                    </span>
+                  </div>
+
+                  {/* Role Selector */}
+                  <div className="flex items-center justify-between bg-white border border-slate-200 p-2 rounded-lg">
+                    <span className="text-xs font-medium text-slate-500">Role Otorisasi:</span>
+                    {isCurrent ? (
+                      <span className="text-xs font-bold text-emerald-700 uppercase flex items-center">
+                        <Shield className="w-3.5 h-3.5 mr-1" />
+                        {u.role} (Terkunci)
+                      </span>
+                    ) : (
+                      <select
+                        disabled={isProcessing}
+                        value={u.role}
+                        onChange={(e) => handleChangeRole(u.id, u.full_name, e.target.value as UserRole)}
+                        className={`text-xs font-bold px-2.5 py-1 rounded-md border focus:outline-none transition ${
+                          u.role === 'admin'
+                            ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                            : 'bg-sky-50 border-sky-200 text-sky-700'
+                        }`}
+                      >
+                        <option value="checker">CHECKER</option>
+                        <option value="admin">ADMINISTRATOR</option>
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Actions Button */}
+                  {!isCurrent && (
+                    <button
+                      disabled={isProcessing}
+                      onClick={() => handleToggleStatus(u.id, u.is_active, u.full_name)}
+                      className={`w-full py-2 rounded-lg text-xs font-semibold border transition disabled:opacity-50 text-center ${
+                        u.is_active
+                          ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                          : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      }`}
+                    >
+                      {isProcessing ? 'Memproses...' : u.is_active ? 'Nonaktifkan Akun' : 'Aktifkan Akun'}
+                    </button>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* 2. Desktop Users Table (hidden md:block) */}
+        <div className="hidden md:block overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
