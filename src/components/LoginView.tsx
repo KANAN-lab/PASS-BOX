@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, User, ArrowRight, AlertCircle, Info } from 'lucide-react';
+import { Lock, User, ArrowRight, AlertCircle } from 'lucide-react';
 
 export const LoginView: React.FC = () => {
   const { login } = useAuth();
@@ -21,12 +21,6 @@ export const LoginView: React.FC = () => {
       setErrorMsg(res.error || 'Autentikasi gagal. Silakan periksa kembali akun Anda.');
       setLoading(false);
     }
-  };
-
-  const handleQuickFill = (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    setErrorMsg('');
   };
 
   return (
@@ -61,7 +55,7 @@ export const LoginView: React.FC = () => {
                 type="text"
                 required
                 autoFocus
-                placeholder="Contoh: cheker1 atau admin"
+                placeholder="Masukkan username atau email..."
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full pl-10 pr-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition font-medium"
@@ -96,38 +90,10 @@ export const LoginView: React.FC = () => {
           </button>
         </form>
 
-        {/* Information Box: Default Credentials */}
-        <div className="mt-8 pt-5 border-t border-slate-100">
-          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 space-y-2">
-            <div className="flex items-center space-x-1.5 font-semibold text-slate-700">
-              <Info className="w-3.5 h-3.5 text-sky-600" />
-              <span>Akun Default Sistem:</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
-              <button
-                type="button"
-                onClick={() => handleQuickFill('cheker1', 'checker123')}
-                className="p-2 rounded-lg bg-white border border-slate-200 hover:border-sky-400 text-left transition hover:shadow-sm"
-              >
-                <div className="font-bold text-slate-800">Checker</div>
-                <div className="text-slate-500">user: <code className="text-sky-700">cheker1</code></div>
-                <div className="text-slate-500">pass: <code className="text-sky-700">checker123</code></div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickFill('admin', 'admin123')}
-                className="p-2 rounded-lg bg-white border border-slate-200 hover:border-indigo-400 text-left transition hover:shadow-sm"
-              >
-                <div className="font-bold text-indigo-800">Administrator</div>
-                <div className="text-slate-500">user: <code className="text-indigo-700">admin</code></div>
-                <div className="text-slate-500">pass: <code className="text-indigo-700">admin123</code></div>
-              </button>
-            </div>
-            <p className="text-[10px] text-slate-400 text-center">
-              Klik kotak di atas untuk mengisi form login otomatis.
-            </p>
-          </div>
+        <div className="mt-6 pt-4 border-t border-slate-100 text-center">
+          <p className="text-[11px] text-slate-400">
+            Akses sistem dilindungi otorisasi terenkripsi. Hubungi Administrator jika lupa password.
+          </p>
         </div>
       </div>
     </div>

@@ -129,6 +129,43 @@ begin
 end;
 $$;
 
+-- 11b. Fungsi Khusus Admin untuk Reset Password Pengguna Lain
+create or replace function public.admin_reset_user_password(
+  admin_user_id uuid,
+  target_user_id uuid,
+  new_password text
+)
+returns void
+language plpgsql
+security definer set search_path = public
+as $$
+declare
+  is_caller_admin boolean;
+begin
+  select exists (
+    select 1 from public.profiles
+    where id = admin_user_id and role = 'admin' and is_active = true
+  ) into is_caller_admin;
+
+  if not is_caller_admin then
+    raise exception 'Akses ditolak: Hanya administrator yang berhak mereset password pengguna.';
+  end if;
+
+  if length(new_password) < 6 then
+    raise exception 'Password minimal harus 6 karakter.';
+  end if;
+
+  update public.profiles
+  set password_hash = crypt(new_password, gen_salt('bf')),
+      updated_at = now()
+  where id = target_user_id;
+end;
+$$;
+
+grant execute on function public.admin_reset_user_password(uuid, uuid, text) to anon, authenticated;
+grant execute on function public.change_user_password(uuid, text) to anon, authenticated;
+
+
 -- 12. Enable Row Level Security (RLS)
 alter table public.profiles enable row level security;
 alter table public.pass_box_logs enable row level security;

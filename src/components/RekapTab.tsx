@@ -1,9 +1,43 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { PassBoxLog, CheckerSummary } from '../types';
 import { StatCard } from './StatCard';
-import { formatDateTimeIndo } from '../utils/excel';
-import { FileText, Clock, UserCheck } from 'lucide-react';
+import { exportLogsToExcel, formatDateIndo, formatDateTimeIndo } from '../utils/excel';
+import { 
+  FileSpreadsheet, 
+  TrendingUp, 
+  PieChart as PieIcon, 
+  UserCheck, 
+  RefreshCw
+} from 'lucide-react';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+  type ChartOptions
+} from 'chart.js';
+
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 type PresetFilter = 'today' | '7days' | '30days' | 'all';
 
@@ -12,9 +46,19 @@ export const RekapTab: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   // Preset filter state
-  const [preset, setPreset] = useState<PresetFilter>('today');
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [preset, setPreset] = useState<PresetFilter>('30days');
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().split('T')[0];
+  });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+
+  // Canvas refs for Chart.js
+  const trendCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const donutCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const trendChartInstance = useRef<ChartJS | null>(null);
+  const donutChartInstance = useRef<ChartJS | null>(null);
 
   // Load logs
   const fetchLogs = async () => {
@@ -81,6 +125,7 @@ export const RekapTab: React.FC = () => {
     });
   }, [logs, startDate, endDate]);
 
+  // Checker summaries
   const summaries = useMemo(() => {
     const map = new Map<string, { total: number; dates: Set<string>; lastInput: string; userId: string }>();
 
@@ -116,144 +161,445 @@ export const RekapTab: React.FC = () => {
     return result.sort((a, b) => b.total_input - a.total_input);
   }, [filteredLogs]);
 
-  const maxTotal = useMemo(() => {
-    if (summaries.length === 0) return 1;
-    return Math.max(...summaries.map(s => s.total_input), 1);
-  }, [summaries]);
+  // Daily statistics for Trend Chart
+  const dailyStats = useMemo(() => {
+    const countsByDate = new Map<string, number>();
+
+    // Sort ascending for chronological trend
+    const sorted = [...filteredLogs].sort((a, b) => a.tanggal.localeCompare(b.tanggal));
+    sorted.forEach(l => {
+      countsByDate.set(l.tanggal, (countsByDate.get(l.tanggal) || 0) + 1);
+    });
+
+    const labels: string[] = [];
+    const counts: number[] = [];
+
+    countsByDate.forEach((cnt, date) => {
+      labels.push(formatDateIndo(date));
+      counts.push(cnt);
+    });
+
+    return { labels, counts, totalDays: countsByDate.size };
+  }, [filteredLogs]);
+
+  // Executive Metrics
+  const totalVolume = filteredLogs.length;
+  const activeCheckers = summaries.length;
+  const topChecker = summaries[0]?.checker_name || '-';
+  const avgPerDay = dailyStats.totalDays > 0 ? (totalVolume / dailyStats.totalDays).toFixed(1) : '0';
+
+  // Initialize & Update Chart.js Trend
+  useEffect(() => {
+    if (!trendCanvasRef.current) return;
+
+    if (trendChartInstance.current) {
+      trendChartInstance.current.destroy();
+    }
+
+    const ctx = trendCanvasRef.current.getContext('2d');
+    if (!ctx) return;
+
+    const labels = dailyStats.labels.length > 0 ? dailyStats.labels : ['Belum ada data'];
+    const dataPoints = dailyStats.counts.length > 0 ? dailyStats.counts : [0];
+
+    // Create subtle gradient for area fill
+    const gradient = ctx.createLinearGradient(0, 0, 0, 260);
+    gradient.addColorStop(0, 'rgba(2, 132, 199, 0.22)');
+    gradient.addColorStop(1, 'rgba(2, 132, 199, 0.01)');
+
+    const options: ChartOptions<'line'> = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#0f172a',
+          titleFont: { size: 12, weight: 'bold' },
+          bodyFont: { size: 12 },
+          padding: 10,
+          cornerRadius: 8,
+          displayColors: false,
+          callbacks: {
+            label: (item) => `Total: ${item.formattedValue} input pass box`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: {
+            font: { size: 10 },
+            color: '#64748b',
+          },
+        },
+        y: {
+          beginAtZero: true,
+          suggestedMax: Math.max(...dataPoints, 5) + 1,
+          ticks: {
+            stepSize: 1,
+            font: { size: 10 },
+            color: '#64748b',
+          },
+          grid: {
+            color: '#f1f5f9',
+          },
+        },
+      },
+    };
+
+    trendChartInstance.current = new ChartJS(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: 'Transaksi Pass Box',
+            data: dataPoints,
+            borderColor: '#0284c7',
+            backgroundColor: gradient,
+            borderWidth: 2.5,
+            pointBackgroundColor: '#0284c7',
+            pointBorderColor: '#ffffff',
+            pointBorderWidth: 2,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            fill: true,
+            tension: 0.3,
+          },
+        ],
+      },
+      options,
+    });
+
+    return () => {
+      trendChartInstance.current?.destroy();
+    };
+  }, [dailyStats]);
+
+  // Initialize & Update Chart.js Donut (Checker distribution)
+  useEffect(() => {
+    if (!donutCanvasRef.current) return;
+
+    if (donutChartInstance.current) {
+      donutChartInstance.current.destroy();
+    }
+
+    const ctx = donutCanvasRef.current.getContext('2d');
+    if (!ctx) return;
+
+    const labels = summaries.map(s => s.checker_name);
+    const dataPoints = summaries.map(s => s.total_input);
+
+    const palette = [
+      '#0284c7', // Sky
+      '#4f46e5', // Indigo
+      '#0d9488', // Teal
+      '#ea580c', // Orange
+      '#8b5cf6', // Violet
+      '#10b981', // Emerald
+      '#64748b', // Slate
+    ];
+
+    donutChartInstance.current = new ChartJS(ctx, {
+      type: 'doughnut',
+      data: {
+        labels: labels.length > 0 ? labels : ['Belum ada data'],
+        datasets: [
+          {
+            data: dataPoints.length > 0 ? dataPoints : [1],
+            backgroundColor: dataPoints.length > 0 ? palette.slice(0, labels.length) : ['#e2e8f0'],
+            borderWidth: 2,
+            borderColor: '#ffffff',
+            hoverOffset: 4,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '68%',
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              boxWidth: 10,
+              boxHeight: 10,
+              font: { size: 11 },
+              padding: 12,
+              color: '#334155',
+            },
+          },
+          tooltip: {
+            backgroundColor: '#0f172a',
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              label: (item) => {
+                if (dataPoints.length === 0) return ' Tidak ada data';
+                const count = item.parsed;
+                const pct = totalVolume > 0 ? ((count / totalVolume) * 100).toFixed(1) : 0;
+                return ` ${item.label}: ${count} input (${pct}%)`;
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return () => {
+      donutChartInstance.current?.destroy();
+    };
+  }, [summaries, totalVolume]);
 
   const activePeriodText = startDate && endDate
-    ? `${startDate} s/d ${endDate}`
+    ? `${formatDateIndo(startDate)} s/d ${formatDateIndo(endDate)}`
     : startDate
-    ? `Mulai ${startDate}`
+    ? `Mulai ${formatDateIndo(startDate)}`
     : endDate
-    ? `Hingga ${endDate}`
+    ? `Hingga ${formatDateIndo(endDate)}`
     : 'Semua Waktu';
 
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
-      {/* Top Header: Title & Stat Card */}
+      {/* Top Header: Title & Export Action */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-            Rekap Per Checker
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center space-x-2">
+            <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-sky-600" />
+            <span>Rekapitulasi & Analitik Pass Box</span>
           </h1>
           <p className="text-xs font-medium text-slate-500 mt-0.5">
-            Jumlah input data berdasarkan tanggal pada kolom Tanggal.
+            Analisis tren pergerakan cleanroom pass box, kontribusi checker, dan laporan eksekutif.
           </p>
         </div>
 
-        <div className="self-start sm:self-auto min-w-[140px]">
-          <StatCard label="TOTAL PERIODE" value={filteredLogs.length} accentColor="bg-indigo-600" />
+        <div className="flex items-center space-x-2 self-start sm:self-auto">
+          <button
+            onClick={fetchLogs}
+            disabled={loading}
+            className="p-2 border border-slate-300 hover:bg-slate-100 rounded-lg text-slate-600 transition"
+            title="Segarkan data rekap"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+
+          <button
+            onClick={() => exportLogsToExcel(filteredLogs, 'Laporan_Eksekutif_Pass_Box')}
+            className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm transition"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            <span>Export Excel Profesional</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Card */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm space-y-4">
-        {/* Filter Controls */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 border-b border-slate-100 pb-3.5">
-          {/* Preset Buttons Grid on Mobile */}
-          <div className="grid grid-cols-4 sm:flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-            <button
-              onClick={() => handleSelectPreset('today')}
-              className={`py-1.5 px-2.5 rounded-md text-[11px] sm:text-xs font-semibold text-center transition ${
-                preset === 'today'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Hari ini
-            </button>
-            <button
-              onClick={() => handleSelectPreset('7days')}
-              className={`py-1.5 px-2.5 rounded-md text-[11px] sm:text-xs font-semibold text-center transition ${
-                preset === '7days'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              7 hari
-            </button>
-            <button
-              onClick={() => handleSelectPreset('30days')}
-              className={`py-1.5 px-2.5 rounded-md text-[11px] sm:text-xs font-semibold text-center transition ${
-                preset === '30days'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              30 hari
-            </button>
-            <button
-              onClick={() => handleSelectPreset('all')}
-              className={`py-1.5 px-2.5 rounded-md text-[11px] sm:text-xs font-semibold text-center transition ${
-                preset === 'all'
-                  ? 'bg-sky-600 text-white shadow-sm'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Semua
-            </button>
-          </div>
+      {/* Filter Control Banner */}
+      <div className="bg-white border border-slate-200 rounded-xl p-3 sm:p-4 shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+        {/* Quick Presets */}
+        <div className="grid grid-cols-4 sm:flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+          {(['today', '7days', '30days', 'all'] as PresetFilter[]).map((p) => {
+            const labels: Record<PresetFilter, string> = {
+              today: 'Hari ini',
+              '7days': '7 Hari',
+              '30days': '30 Hari',
+              all: 'Semua',
+            };
 
-          {/* Date Range Inputs */}
+            return (
+              <button
+                key={p}
+                onClick={() => handleSelectPreset(p)}
+                className={`py-1.5 px-3 rounded-md text-[11px] sm:text-xs font-semibold text-center transition ${
+                  preset === p
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {labels[p]}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Date Range Inputs */}
+        <div className="flex items-center space-x-2">
           <div className="grid grid-cols-2 sm:flex items-center gap-1.5 bg-slate-50 p-1 rounded-lg border border-slate-200 text-xs">
             <input
               type="date"
               value={startDate}
               onChange={(e) => {
-                setStartDate(e.target.value);
                 setPreset('all');
+                setStartDate(e.target.value);
               }}
               className="h-8 bg-white border border-slate-300 rounded px-2 text-slate-700 focus:outline-none text-[11px]"
+              title="Tanggal Awal"
             />
-            <span className="hidden sm:inline text-slate-400 font-medium text-xs text-center">s/d</span>
+            <span className="hidden sm:inline text-slate-400 font-medium text-[11px] px-1">s/d</span>
             <input
               type="date"
               value={endDate}
               onChange={(e) => {
-                setEndDate(e.target.value);
                 setPreset('all');
+                setEndDate(e.target.value);
               }}
               className="h-8 bg-white border border-slate-300 rounded px-2 text-slate-700 focus:outline-none text-[11px]"
+              title="Tanggal Akhir"
             />
+          </div>
+
+          {(startDate || endDate) && (
+            <button
+              onClick={() => {
+                setPreset('all');
+                setStartDate('');
+                setEndDate('');
+              }}
+              className="text-slate-400 hover:text-slate-600 text-[11px] underline"
+            >
+              Reset
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 4 Executive KPI Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        <StatCard 
+          label="TOTAL VOLUME PERIODE" 
+          value={totalVolume} 
+          accentColor="bg-sky-600" 
+        />
+        <StatCard 
+          label="CHECKER AKTIF" 
+          value={activeCheckers} 
+          accentColor="bg-indigo-600" 
+        />
+        <StatCard 
+          label="TOP CHECKER" 
+          value={topChecker} 
+          accentColor="bg-amber-500" 
+        />
+        <StatCard 
+          label="RATA-RATA / HARI" 
+          value={`${avgPerDay} /hr`} 
+          accentColor="bg-teal-600" 
+        />
+      </div>
+
+      {/* Analytical Charts Grid: Left Trend Line (lg:col-span-8), Right Donut (lg:col-span-4) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-stretch">
+        {/* Left: Trend Aktivitas Harian */}
+        <div className="lg:col-span-8 bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-slate-800 flex items-center space-x-1.5">
+                <TrendingUp className="w-4 h-4 text-sky-600" />
+                <span>Tren Aktivitas Harian</span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Periode: <strong className="text-slate-700">{activePeriodText}</strong>
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="text-[11px] font-semibold text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+                {dailyStats.totalDays} Hari Aktif
+              </span>
+            </div>
+          </div>
+
+          <div className="h-64 sm:h-72 w-full relative">
+            <canvas ref={trendCanvasRef} />
           </div>
         </div>
 
-        {/* 1. Mobile Cards View (block md:hidden) */}
-        <div className="block md:hidden space-y-2.5">
+        {/* Right: Distribusi Proporsi Checker */}
+        <div className="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm flex flex-col justify-between">
+          <div className="border-b border-slate-100 pb-3 mb-3">
+            <h2 className="text-sm sm:text-base font-bold text-slate-800 flex items-center space-x-1.5">
+              <PieIcon className="w-4 h-4 text-indigo-600" />
+              <span>Proporsi Kontribusi Checker</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Porsi input masing-masing checker
+            </p>
+          </div>
+
+          <div className="h-64 sm:h-72 w-full relative flex items-center justify-center">
+            <canvas ref={donutCanvasRef} />
+          </div>
+        </div>
+      </div>
+
+      {/* Checker Leaderboard & Details */}
+      <div className="bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h2 className="text-sm sm:text-base font-bold text-slate-800 flex items-center space-x-1.5">
+              <UserCheck className="w-4 h-4 text-slate-700" />
+              <span>Rincian Kinerja Checker</span>
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Urutan berdasarkan volume input dokumen selama periode terpilih
+            </p>
+          </div>
+          <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md">
+            {summaries.length} Checker
+          </span>
+        </div>
+
+        {/* 1. Mobile Cards (block md:hidden) */}
+        <div className="block md:hidden space-y-3">
           {summaries.length === 0 ? (
             <div className="py-8 text-center text-slate-400 text-xs bg-slate-50 rounded-lg border border-dashed border-slate-200">
-              {loading ? 'Memuat rekap data...' : 'Tidak ada aktivitas data pada periode ini.'}
+              {loading ? 'Menghitung rekap...' : 'Tidak ada catatan input pada rentang tanggal ini.'}
             </div>
           ) : (
-            summaries.map((item) => {
-              const percent = Math.round((item.total_input / maxTotal) * 100);
+            summaries.map((s, idx) => {
+              const pct = totalVolume > 0 ? ((s.total_input / totalVolume) * 100).toFixed(1) : '0';
 
               return (
-                <div key={item.checker_name} className="bg-slate-50/70 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
+                <div key={s.checker_name} className="bg-slate-50/80 border border-slate-200 rounded-xl p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="font-extrabold text-slate-900 text-sm">{item.checker_name}</span>
-                    <span className="text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
-                      <UserCheck className="w-3 h-3 text-sky-600" />
-                      <span>{item.hari_aktif} Hari Aktif</span>
-                    </span>
+                    <div className="flex items-center space-x-2">
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${
+                        idx === 0 
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300' 
+                          : idx === 1 
+                          ? 'bg-slate-200 text-slate-800' 
+                          : 'bg-slate-100 text-slate-500'
+                      }`}>
+                        #{idx + 1}
+                      </span>
+                      <span className="font-extrabold text-slate-900 text-sm">
+                        {s.checker_name}
+                      </span>
+                    </div>
+
+                    <div className="text-right">
+                      <span className="font-black text-sky-700 text-base">
+                        {s.total_input}
+                      </span>
+                      <span className="text-[11px] text-slate-400 ml-1">kali</span>
+                    </div>
                   </div>
 
-                  {/* Progress Bar & Number */}
+                  {/* Progress bar */}
                   <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-slate-500 font-medium text-[11px]">Total Kontribusi</span>
-                      <span className="font-bold text-sky-700">{item.total_input} input ({percent}%)</span>
+                    <div className="flex items-center justify-between text-[11px] text-slate-500">
+                      <span>Porsi Kontribusi: {pct}%</span>
+                      <span>{s.hari_aktif} hari aktif</span>
                     </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                      <div className="bg-sky-600 h-full rounded-full transition-all duration-500" style={{ width: `${percent}%` }} />
+                    <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-sky-600 h-full rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(parseFloat(pct), 100)}%` }}
+                      />
                     </div>
                   </div>
 
-                  {/* Last Input */}
-                  <div className="flex items-center space-x-1.5 text-[11px] text-slate-500 pt-1 border-t border-slate-200/60">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Terakhir input: <strong className="text-slate-700 font-mono">{formatDateTimeIndo(item.input_terakhir)}</strong></span>
+                  <div className="text-[11px] text-slate-500 pt-1 border-t border-slate-200/60 flex items-center justify-between">
+                    <span>Input Terakhir:</span>
+                    <strong className="text-slate-700">{formatDateTimeIndo(s.input_terakhir)}</strong>
                   </div>
                 </div>
               );
@@ -261,51 +607,74 @@ export const RekapTab: React.FC = () => {
           )}
         </div>
 
-        {/* 2. Desktop Table View (hidden md:block) */}
+        {/* 2. Desktop Table (hidden md:block) */}
         <div className="hidden md:block overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
-                <th className="py-3 px-4 w-48">CHECKER</th>
-                <th className="py-3 px-4 min-w-[280px]">TOTAL INPUT</th>
-                <th className="py-3 px-4 text-center w-28">HARI AKTIF</th>
-                <th className="py-3 px-4 w-44">INPUT TERAKHIR</th>
+                <th className="py-3 px-4 w-12 text-center">RANK</th>
+                <th className="py-3 px-4">NAMA CHECKER</th>
+                <th className="py-3 px-4 text-center">TOTAL INPUT</th>
+                <th className="py-3 px-4 text-center">HARI AKTIF</th>
+                <th className="py-3 px-4 w-44">KONTRIBUSI</th>
+                <th className="py-3 px-4">INPUT TERAKHIR</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {summaries.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="py-8 text-center text-slate-400">
-                    {loading ? 'Memuat rekap data...' : 'Tidak ada aktivitas data pada periode ini.'}
+                  <td colSpan={6} className="py-8 text-center text-slate-400">
+                    {loading ? 'Menghitung rekap...' : 'Tidak ada catatan input pada rentang tanggal ini.'}
                   </td>
                 </tr>
               ) : (
-                summaries.map((item) => {
-                  const percent = Math.round((item.total_input / maxTotal) * 100);
+                summaries.map((s, idx) => {
+                  const pct = totalVolume > 0 ? ((s.total_input / totalVolume) * 100).toFixed(1) : '0';
 
                   return (
-                    <tr key={item.checker_name} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-4 font-semibold text-slate-800">
-                        {item.checker_name}
+                    <tr key={s.checker_name} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 text-center">
+                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold ${
+                          idx === 0 
+                            ? 'bg-amber-100 text-amber-800 border border-amber-300' 
+                            : idx === 1 
+                            ? 'bg-slate-200 text-slate-800' 
+                            : idx === 2
+                            ? 'bg-orange-100 text-orange-800'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {idx + 1}
+                        </span>
                       </td>
+
+                      <td className="py-3 px-4 font-bold text-slate-800">
+                        {s.checker_name}
+                      </td>
+
+                      <td className="py-3 px-4 text-center font-extrabold text-sky-700 text-sm">
+                        {s.total_input}
+                      </td>
+
+                      <td className="py-3 px-4 text-center font-semibold text-slate-600">
+                        {s.hari_aktif} hari
+                      </td>
+
                       <td className="py-3 px-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex-1 bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                            <div
+                        <div className="flex items-center space-x-2">
+                          <div className="flex-1 bg-slate-200 h-2 rounded-full overflow-hidden">
+                            <div 
                               className="bg-sky-600 h-full rounded-full transition-all duration-500"
-                              style={{ width: `${percent}%` }}
+                              style={{ width: `${Math.min(parseFloat(pct), 100)}%` }}
                             />
                           </div>
-                          <span className="font-bold text-slate-800 min-w-[20px] text-right">
-                            {item.total_input}
+                          <span className="text-[11px] font-bold text-slate-600 w-11 text-right">
+                            {pct}%
                           </span>
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-center font-medium text-slate-600">
-                        {item.hari_aktif}
-                      </td>
-                      <td className="py-3 px-4 text-slate-600 whitespace-nowrap font-mono text-[11px]">
-                        {formatDateTimeIndo(item.input_terakhir)}
+
+                      <td className="py-3 px-4 text-slate-600 font-medium">
+                        {formatDateTimeIndo(s.input_terakhir)}
                       </td>
                     </tr>
                   );
@@ -313,12 +682,6 @@ export const RekapTab: React.FC = () => {
               )}
             </tbody>
           </table>
-        </div>
-
-        {/* Footer Note */}
-        <div className="pt-2 flex items-center space-x-1.5 text-[11px] sm:text-xs text-slate-500">
-          <FileText className="w-3.5 h-3.5 text-slate-400" />
-          <span>Periode: {activePeriodText}</span>
         </div>
       </div>
     </div>
