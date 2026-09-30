@@ -776,7 +776,7 @@ export const PenggunaTab: React.FC = () => {
                                 : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                             }`}
                           >
-                            {isProcessing ? 'Proses...' : u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                            <span>{isProcessing ? 'Proses...' : u.is_active ? 'Nonaktifkan' : 'Aktifkan'}</span>
                           </button>
                         ) : (
                           <div className="flex items-center justify-center text-[11px] text-slate-400 bg-slate-50 rounded-lg border border-slate-200/60 font-medium">
@@ -921,7 +921,7 @@ export const PenggunaTab: React.FC = () => {
                                       : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
                                   }`}
                                 >
-                                  {isProcessing ? '...' : u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                                  <span>{isProcessing ? '...' : u.is_active ? 'Nonaktifkan' : 'Aktifkan'}</span>
                                 </button>
                               ) : (
                                 <span className="text-slate-400 text-[11px] px-2">Akun Aktif</span>
@@ -1033,7 +1033,7 @@ export const PenggunaTab: React.FC = () => {
                             : 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
                         }`}
                       >
-                        {pb.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                        <span>{pb.is_active ? 'Nonaktifkan' : 'Aktifkan'}</span>
                       </button>
 
                       {!isDefault && (

@@ -161,7 +161,7 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
               onClick={onClose}
               className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition"
             >
-              Batal
+              <span>Batal</span>
             </button>
             <button
               type="submit"

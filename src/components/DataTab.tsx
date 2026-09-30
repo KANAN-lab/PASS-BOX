@@ -44,7 +44,7 @@ export const DataTab: React.FC = () => {
   const [kategoriPro, setKategoriPro] = useState<KategoriPro | ''>(''); // Wajib pilih dulu
   const [noPro, setNoPro] = useState('');
   const [tanggal, setTanggal] = useState(todayStr);
-  const [passBox, setPassBox] = useState('Pass Box 1'); // Pilihan OOP
+  const [passBox, setPassBox] = useState(''); // Wajib pilih manual (tidak auto-choose)
   const [submitting, setSubmitting] = useState(false);
 
   // Filters
@@ -77,8 +77,8 @@ export const DataTab: React.FC = () => {
 
       if (!error && data && data.length > 0) {
         setAvailablePassBoxes(data);
-        if (!passBox || !data.some(p => p.name === passBox)) {
-          setPassBox(data[0].name);
+        if (passBox && !data.some(p => p.name === passBox)) {
+          setPassBox('');
         }
       } else {
         const local = localStorage.getItem('local_pass_boxes');
@@ -86,7 +86,9 @@ export const DataTab: React.FC = () => {
           const parsed: PassBoxMaster[] = JSON.parse(local).filter((p: PassBoxMaster) => p.is_active);
           if (parsed.length > 0) {
             setAvailablePassBoxes(parsed);
-            if (!passBox) setPassBox(parsed[0].name);
+            if (passBox && !parsed.some(p => p.name === passBox)) {
+              setPassBox('');
+            }
           }
         }
       }
@@ -163,7 +165,15 @@ export const DataTab: React.FC = () => {
       alert('PENTING: Wajib memilih tipe PRO (RM atau PM) terlebih dahulu.');
       return;
     }
-    if (!noPro.trim() || !tanggal || !passBox.trim()) return;
+    if (!noPro.trim()) {
+      alert('PENTING: Wajib mengisi No PRO terlebih dahulu.');
+      return;
+    }
+    if (!passBox.trim()) {
+      alert('PENTING: Wajib memilih salah satu Pass Box terlebih dahulu.');
+      return;
+    }
+    if (!tanggal) return;
 
     setSubmitting(true);
     const newEntry = {
@@ -199,7 +209,7 @@ export const DataTab: React.FC = () => {
       // Reset form
       setNoPro('');
       setKategoriPro('');
-      // passBox tetap tersimpan di pilihan terakhir agar mempercepat input berulang
+      setPassBox('');
     } catch (err: any) {
       alert('Error: ' + err.message);
     } finally {
@@ -211,9 +221,7 @@ export const DataTab: React.FC = () => {
     setKategoriPro('');
     setNoPro('');
     setTanggal(todayStr);
-    if (availablePassBoxes.length > 0) {
-      setPassBox(availablePassBoxes[0].name);
-    }
+    setPassBox('');
   };
 
   // Handle Edit Save
@@ -310,8 +318,7 @@ export const DataTab: React.FC = () => {
       const action = btn.getAttribute('data-dt-action');
       const idStr = btn.getAttribute('data-id');
       if (!idStr) return;
-      const logId = Number(idStr);
-      const targetLog = logsRef.current.find((l) => l.id === logId);
+      const targetLog = logsRef.current.find((l) => String(l.id) === String(idStr));
       if (!targetLog) return;
 
       if (action === 'edit') {
@@ -465,9 +472,13 @@ export const DataTab: React.FC = () => {
         },
       });
     } else {
-      dtInstanceRef.current.clear();
-      dtInstanceRef.current.rows.add(filteredLogs);
-      dtInstanceRef.current.draw(false);
+      try {
+        dtInstanceRef.current.clear();
+        dtInstanceRef.current.rows.add(filteredLogs);
+        dtInstanceRef.current.draw(false);
+      } catch (err) {
+        console.warn('DataTable redraw notice:', err);
+      }
     }
   }, [filteredLogs, loading, isAdmin, isSpv, user?.id]);
 
@@ -625,10 +636,11 @@ export const DataTab: React.FC = () => {
             {/* 4. PASS BOX (CHOOSE SELECTION DARI MASTER ADMIN) */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  4. PILIHAN PASS BOX
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1">
+                  <span>4. PILIHAN PASS BOX</span>
+                  <span className="text-rose-500">*</span>
                 </label>
-                <span className="text-[10px] text-slate-400 font-medium">Pilih salah satu</span>
+                <span className="text-[10px] text-slate-400 font-medium">Pilih salah satu (Wajib)</span>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -659,7 +671,7 @@ export const DataTab: React.FC = () => {
             <div className="flex items-center space-x-2 pt-2 border-t border-slate-100">
               <button
                 type="submit"
-                disabled={submitting || !kategoriPro || !noPro.trim()}
+                disabled={submitting || !kategoriPro || !noPro.trim() || !passBox.trim()}
                 className="flex-1 h-11 flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-semibold rounded-xl shadow-sm transition disabled:opacity-50 text-sm"
               >
                 <Save className="w-4 h-4" />
