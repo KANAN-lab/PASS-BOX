@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import DataTable from 'datatables.net-dt';
+import 'datatables.net-dt/css/dataTables.dataTables.css';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import type { PassBoxLog, KategoriPro, PassBoxMaster } from '../types';
@@ -22,7 +24,7 @@ import {
 } from 'lucide-react';
 
 export const DataTab: React.FC = () => {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isSpv } = useAuth();
 
   // Logs state
   const [logs, setLogs] = useState<PassBoxLog[]>([]);
@@ -54,6 +56,8 @@ export const DataTab: React.FC = () => {
   const [editingLog, setEditingLog] = useState<PassBoxLog | null>(null);
 
   const noProInputRef = useRef<HTMLInputElement>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const dtInstanceRef = useRef<any>(null);
 
   // Fetch active pass boxes
   const fetchPassBoxes = async () => {
@@ -287,6 +291,166 @@ export const DataTab: React.FC = () => {
       return true;
     });
   }, [logs, searchQuery, filterKategori, filterPassBox, startDate, endDate]);
+
+  // Delegated click handler untuk tombol aksi (Edit & Delete) di DataTables.js
+  useEffect(() => {
+    const tableEl = tableRef.current;
+    if (!tableEl) return;
+
+    const handleActionClick = (e: MouseEvent) => {
+      const btn = (e.target as HTMLElement).closest('[data-dt-action]');
+      if (!btn) return;
+      const action = btn.getAttribute('data-dt-action');
+      const idStr = btn.getAttribute('data-id');
+      if (!idStr) return;
+      const logId = Number(idStr);
+      const targetLog = logs.find((l) => l.id === logId);
+      if (!targetLog) return;
+
+      if (action === 'edit') {
+        setEditingLog(targetLog);
+      } else if (action === 'delete') {
+        handleDelete(targetLog.id);
+      }
+    };
+
+    tableEl.addEventListener('click', handleActionClick);
+    return () => {
+      tableEl.removeEventListener('click', handleActionClick);
+    };
+  }, [logs, isAdmin, isSpv, user?.id]);
+
+  // Inisialisasi dan sinkronisasi DataTables.js
+  useEffect(() => {
+    if (loading || !tableRef.current) return;
+
+    if (!dtInstanceRef.current) {
+      dtInstanceRef.current = new DataTable(tableRef.current, {
+        data: filteredLogs,
+        columns: [
+          {
+            title: 'NO',
+            data: null,
+            className: 'text-center font-medium text-slate-500 w-12 dt-orderable-none',
+            orderable: false,
+            searchable: false,
+            render: (_data: any, _type: string, _row: any, meta: any) => {
+              return `<span class="text-slate-400 font-bold">${meta.row + 1}</span>`;
+            },
+          },
+          {
+            title: 'TIPE',
+            data: 'kategori_pro',
+            className: 'text-center w-20',
+            orderable: true,
+            render: (_data: any, type: string, row: PassBoxLog) => {
+              const kat = row.kategori_pro || (row.pass_box.toLowerCase().includes('pm') ? 'PM' : 'RM');
+              if (type === 'sort' || type === 'type') return kat;
+              const badgeClass =
+                kat === 'RM'
+                  ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                  : 'bg-indigo-100 text-indigo-800 border-indigo-200';
+              return `<span class="inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase border ${badgeClass}">${kat}</span>`;
+            },
+          },
+          {
+            title: 'NO PRO',
+            data: 'no_pro',
+            className: 'font-semibold text-slate-800 font-mono',
+            orderable: true,
+            render: (_data: any, type: string, row: PassBoxLog) => {
+              if (type === 'sort' || type === 'type') return row.no_pro;
+              return `<span class="font-mono font-bold text-slate-900">${row.no_pro}</span>`;
+            },
+          },
+          {
+            title: 'TANGGAL',
+            data: 'tanggal',
+            className: 'text-slate-600 whitespace-nowrap',
+            orderable: true,
+            render: (_data: any, type: string, row: PassBoxLog) => {
+              if (type === 'sort' || type === 'type') return `${row.tanggal} ${row.created_at || ''}`;
+              return formatDateIndo(row.tanggal);
+            },
+          },
+          {
+            title: 'PILIHAN PASS BOX',
+            data: 'pass_box',
+            orderable: true,
+            render: (_data: any, type: string, row: PassBoxLog) => {
+              if (type === 'sort' || type === 'type') return row.pass_box;
+              return `<span class="inline-flex items-center space-x-1 font-bold text-slate-800 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded"><span>${row.pass_box}</span></span>`;
+            },
+          },
+          {
+            title: 'DIINPUT OLEH',
+            data: 'user_name',
+            className: 'text-slate-600 font-medium',
+            orderable: true,
+            render: (_data: any, type: string, row: PassBoxLog) => {
+              if (type === 'sort' || type === 'type') return row.user_name || '';
+              return `<span>${row.user_name || '-'}</span>`;
+            },
+          },
+          {
+            title: 'AKSI',
+            data: null,
+            className: 'text-center w-20 dt-orderable-none',
+            orderable: false,
+            searchable: false,
+            render: (_data: any, _type: string, row: PassBoxLog) => {
+              const canModify = isAdmin || isSpv || row.user_id === user?.id;
+              if (!canModify) return '<span class="text-slate-300">-</span>';
+              return `
+                <div class="flex items-center justify-center space-x-1">
+                  <button type="button" data-dt-action="edit" data-id="${row.id}" class="p-1.5 text-slate-600 hover:text-sky-600 hover:bg-sky-50 rounded transition cursor-pointer" title="Edit Log">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                  </button>
+                  <button type="button" data-dt-action="delete" data-id="${row.id}" class="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer" title="Hapus Log">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                  </button>
+                </div>
+              `;
+            },
+          },
+        ],
+        pageLength: 10,
+        lengthMenu: [10, 25, 50, 100],
+        ordering: true,
+        orderMulti: true,
+        order: [[3, 'desc']],
+        language: {
+          search: "Cari Data:",
+          searchPlaceholder: "No PRO, Checker...",
+          lengthMenu: "Tampilkan _MENU_ baris",
+          info: "Menampilkan _START_ s/d _END_ dari _TOTAL_ data",
+          infoEmpty: "Menampilkan 0 data",
+          infoFiltered: "(disaring dari _MAX_ total data)",
+          zeroRecords: "Tidak ada data yang cocok",
+          emptyTable: "Belum ada catatan Pass Box",
+          paginate: {
+            first: "«",
+            last: "»",
+            next: "›",
+            previous: "‹",
+          },
+        },
+      });
+    } else {
+      dtInstanceRef.current.clear();
+      dtInstanceRef.current.rows.add(filteredLogs);
+      dtInstanceRef.current.draw(false);
+    }
+  }, [filteredLogs, loading, isAdmin, isSpv, user?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (dtInstanceRef.current) {
+        dtInstanceRef.current.destroy();
+        dtInstanceRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <div className="max-w-[1400px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
@@ -606,7 +770,7 @@ export const DataTab: React.FC = () => {
               </div>
             ) : (
               filteredLogs.map((log, idx) => {
-                const canModify = isAdmin || log.user_id === user?.id;
+                const canModify = isAdmin || isSpv || log.user_id === user?.id;
                 const kat = log.kategori_pro || (log.pass_box.toLowerCase().includes('pm') ? 'PM' : 'RM');
 
                 return (
@@ -679,95 +843,46 @@ export const DataTab: React.FC = () => {
             )}
           </div>
 
-          {/* 2. DESKTOP VIEW: Full Tabular Grid (hidden md:block) */}
-          <div className="hidden md:block overflow-x-auto rounded-lg border border-slate-200">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
-                  <th className="py-2.5 px-3 w-10 text-center">NO</th>
-                  <th className="py-2.5 px-3 w-16 text-center">TIPE</th>
-                  <th className="py-2.5 px-3">NO PRO</th>
-                  <th className="py-2.5 px-3">TANGGAL</th>
-                  <th className="py-2.5 px-3">PILIHAN PASS BOX</th>
-                  <th className="py-2.5 px-3">DIINPUT OLEH</th>
-                  <th className="py-2.5 px-3 text-center w-16">AKSI</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredLogs.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-400">
-                      {loading ? 'Memuat data...' : 'Tidak ada data yang sesuai filter.'}
-                    </td>
+          {/* 2. DESKTOP VIEW: DataTables.js Interactive Grid */}
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200/90 bg-white p-3 shadow-xs">
+            {/* Table Sorting Tip Banner */}
+            <div className="flex items-center justify-between px-1 pb-2 text-[11px] text-slate-500 border-b border-slate-100 mb-2">
+              <span className="flex items-center space-x-1.5">
+                <span className="text-sky-600 font-bold">⇅ Fitur Sortir:</span>
+                <span>Klik judul kolom (<strong>TIPE, NO PRO, TANGGAL, PILIHAN PASS BOX, DIINPUT OLEH</strong>) untuk mengurutkan data naik atau turun.</span>
+              </span>
+              <span className="text-slate-400 hidden sm:inline text-[10px]">
+                Default: Tanggal Terbaru
+              </span>
+            </div>
+
+            {loading ? (
+              <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center justify-center space-y-2">
+                <div className="w-6 h-6 border-2 border-sky-600 border-t-transparent rounded-full animate-spin"></div>
+                <span>Memuat data log Pass Box...</span>
+              </div>
+            ) : (
+              <table
+                ref={tableRef}
+                className="display w-full text-left border-collapse text-xs"
+                style={{ width: '100%' }}
+              >
+                <thead>
+                  <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                    <th className="py-2.5 px-3 w-12 text-center" title="Nomor Baris">NO</th>
+                    <th className="py-2.5 px-3 w-20 text-center" title="Klik untuk mengurutkan Tipe">TIPE</th>
+                    <th className="py-2.5 px-3" title="Klik untuk mengurutkan No PRO">NO PRO</th>
+                    <th className="py-2.5 px-3" title="Klik untuk mengurutkan Tanggal">TANGGAL</th>
+                    <th className="py-2.5 px-3" title="Klik untuk mengurutkan Pass Box">PILIHAN PASS BOX</th>
+                    <th className="py-2.5 px-3" title="Klik untuk mengurutkan Checker">DIINPUT OLEH</th>
+                    <th className="py-2.5 px-3 text-center w-20" title="Aksi Baris">AKSI</th>
                   </tr>
-                ) : (
-                  filteredLogs.map((log, idx) => {
-                    const canModify = isAdmin || log.user_id === user?.id;
-                    const kat = log.kategori_pro || (log.pass_box.toLowerCase().includes('pm') ? 'PM' : 'RM');
-
-                    return (
-                      <tr key={log.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-2.5 px-3 text-center font-medium text-slate-500">
-                          {idx + 1}
-                        </td>
-
-                        <td className="py-2.5 px-3 text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase ${
-                            kat === 'RM' 
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                              : 'bg-indigo-100 text-indigo-800 border border-indigo-200'
-                          }`}>
-                            {kat}
-                          </span>
-                        </td>
-
-                        <td className="py-2.5 px-3 font-semibold text-slate-800 font-mono">
-                          {log.no_pro}
-                        </td>
-
-                        <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
-                          {formatDateIndo(log.tanggal)}
-                        </td>
-
-                        <td className="py-2.5 px-3">
-                          <span className="inline-flex items-center space-x-1 font-bold text-slate-800 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">
-                            <Box className="w-3 h-3 text-sky-600" />
-                            <span>{log.pass_box}</span>
-                          </span>
-                        </td>
-
-                        <td className="py-2.5 px-3 text-slate-600 font-medium">
-                          {log.user_name}
-                        </td>
-
-                        <td className="py-2.5 px-3 text-center">
-                          {canModify ? (
-                            <div className="flex items-center justify-center space-x-1">
-                              <button
-                                onClick={() => setEditingLog(log)}
-                                className="p-1 text-slate-500 hover:text-sky-600 rounded transition"
-                                title="Edit"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(log.id)}
-                                className="p-1 text-slate-500 hover:text-rose-600 rounded transition"
-                                title="Hapus"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="text-slate-300">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {/* DataTables.js mengisi dan mengatur baris secara otomatis */}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       </div>

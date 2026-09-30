@@ -57,7 +57,8 @@ Setelah script `supabase_setup.sql` dijalankan di Supabase SQL Editor, akun defa
 | Role | Username / Email | Password Default | Hak Akses |
 | :--- | :--- | :--- | :--- |
 | **CHECKER** | `cheker1` *(cheker1@passbox.local)* | `checker123` | Input data log, lihat data, export Excel |
-| **ADMINISTRATOR** | `admin` *(admin@passbox.local)* | `admin123` | Hak penuh: Tab Data, Rekap Per Checker, dan Manajemen Pengguna (Ubah Role & Status Akun) |
+| **SPV** | `spv` | `spv123` | Supervisi operasional: Tab Data (Edit/Hapus Log), Tab Rekap Lengkap & Export Excel, Panel Pengguna Read-Only (Tanpa otoritas mengubah Master Data) |
+| **ADMINISTRATOR** | `admin` *(admin@passbox.local)* | `admin123` | Hak penuh: Tab Data, Rekap Per Checker, Manajemen Pengguna & Otoritas Konfigurasi Master Data Pass Box |
 
 ---
 

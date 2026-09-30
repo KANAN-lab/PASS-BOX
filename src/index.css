@@ -23,3 +23,177 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Custom DataTables.js Styling for Pass Box Cleanroom Theme */
+.dt-container {
+  font-size: 0.75rem;
+  color: #334155;
+  width: 100%;
+}
+
+.dt-container .dt-layout-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.5rem;
+}
+
+.dt-container .dt-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.dt-container .dt-search input {
+  height: 2rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #1e293b;
+  outline: none;
+  transition: all 0.15s ease-in-out;
+}
+
+.dt-container .dt-search input:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+}
+
+.dt-container .dt-length {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.dt-container .dt-length select {
+  height: 2rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+  background-color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1e293b;
+  outline: none;
+  cursor: pointer;
+}
+
+.dt-container table.dataTable {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin-top: 0.25rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+/* Custom DataTables.js Sorting Indicators & Theme Settings */
+:root {
+  --dt-order-arrow_color: #64748b;
+  --dt-order-arrow_color-current: #0284c7;
+  --dt-order-arrow-height: 6px;
+  --dt-order-arrow_opacity: 0.35;
+  --dt-order-arrow_opacity-current: 1;
+  --dt-order-arrow-width: 8px;
+  --dt-order-arrow-gap: 2px;
+}
+
+.dt-container table.dataTable thead th {
+  background-color: #f8fafc;
+  color: #475569;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+  user-select: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+/* Hover style for sortable headers */
+.dt-container table.dataTable thead th.dt-orderable-asc:hover,
+.dt-container table.dataTable thead th.dt-orderable-desc:hover {
+  background-color: #f1f5f9 !important;
+  color: #0284c7 !important;
+}
+
+/* Active sorted column header */
+.dt-container table.dataTable thead th.dt-ordering-asc,
+.dt-container table.dataTable thead th.dt-ordering-desc {
+  background-color: #f0f9ff !important;
+  color: #0369a1 !important;
+  border-bottom: 2px solid #0284c7 !important;
+}
+
+/* Non-sortable columns like NO and AKSI */
+.dt-container table.dataTable thead th.dt-orderable-none {
+  cursor: default !important;
+}
+.dt-container table.dataTable thead th.dt-orderable-none:hover {
+  background-color: #f8fafc !important;
+  color: #475569 !important;
+}
+
+.dt-container table.dataTable tbody td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.dt-container table.dataTable tbody tr:hover {
+  background-color: rgba(248, 250, 252, 0.9);
+}
+
+.dt-container .dt-info {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #64748b;
+  padding-left: 0.25rem;
+}
+
+.dt-container .dt-paging {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.dt-container .dt-paging button.dt-paging-button {
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.5rem;
+  border-radius: 0.375rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.dt-container .dt-paging button.dt-paging-button:hover:not(.disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.dt-container .dt-paging button.dt-paging-button.current {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+  border-color: #0284c7 !important;
+  font-weight: 700;
+}
+
+.dt-container .dt-paging button.dt-paging-button.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

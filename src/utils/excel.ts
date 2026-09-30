@@ -9,7 +9,7 @@ export function exportLogsToExcel(logs: PassBoxLog[], filenamePrefix = 'Laporan_
   // SHEET 1: DATA DETAIL LOG PASS BOX
   // ==========================================
   const detailAoa: any[][] = [
-    ['PT DIAMOND FOOD INDONESIA TBK'],
+    ['PT. DIAMOND COLD STORAGE'],
     ['LAPORAN OPERASIONAL PASS BOX LOG - DEPARTEMEN RMPM'],
     [`Tanggal Ekspor: ${exportTimeStr}  |  Total Data: ${logs.length} Baris`],
     [], // Blank line
@@ -68,7 +68,7 @@ export function exportLogsToExcel(logs: PassBoxLog[], filenamePrefix = 'Laporan_
   });
 
   const rekapAoa: any[][] = [
-    ['PT DIAMOND FOOD INDONESIA TBK'],
+    ['PT. DIAMOND COLD STORAGE'],
     ['REKAPITULASI AKTIVITAS CHECKER PASS BOX'],
     [`Total Dokumen: ${logs.length}  |  Jumlah Checker Terdaftar: ${checkerMap.size}`],
     [],
@@ -119,7 +119,7 @@ export function exportLogsToExcel(logs: PassBoxLog[], filenamePrefix = 'Laporan_
   });
 
   const dailyAoa: any[][] = [
-    ['PT DIAMOND FOOD INDONESIA TBK'],
+    ['PT. DIAMOND COLD STORAGE'],
     ['STATISTIK TREN TRANSAKSI HARIAN PASS BOX'],
     [`Jumlah Hari Operasional Tercatat: ${dailyMap.size} Hari`],
     [],
@@ -196,7 +196,7 @@ export function exportLogsToExcel(logs: PassBoxLog[], filenamePrefix = 'Laporan_
     : '-';
 
   const hourlyAoa: any[][] = [
-    ['PT DIAMOND FOOD INDONESIA TBK'],
+    ['PT. DIAMOND COLD STORAGE'],
     ['ANALISIS JAM SIBUK & DISTRIBUSI BEBAN SHIFT PASS BOX'],
     [`Jam Puncak Operasional Terdeteksi: Pukul ${peakHourDesc} (${maxVal} Transaksi)`],
     [],

@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'checker';
+export type UserRole = 'admin' | 'spv' | 'checker';
 
 export type KategoriPro = 'RM' | 'PM';
 
@@ -8,6 +8,7 @@ export interface UserProfile {
   full_name: string;
   role: UserRole;
   is_active: boolean;
+  password_hash?: string;
   created_at?: string;
 }
 

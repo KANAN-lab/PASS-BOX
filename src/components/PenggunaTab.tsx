@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 
 export const PenggunaTab: React.FC = () => {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, isAdmin, isSpv, canManageMasterData } = useAuth();
   
   // Sub-tab: 'users' vs 'pass_boxes'
   const [activeSubTab, setActiveSubTab] = useState<'users' | 'pass_boxes'>('users');
@@ -110,6 +110,11 @@ export const PenggunaTab: React.FC = () => {
 
   // 1. Ubah Role Pengguna Menggunakan Secure Database RPC
   const handleChangeRole = async (targetUserId: string, targetName: string, newRole: UserRole) => {
+    if (!isAdmin) {
+      alert('Akses ditolak: Hanya Administrator yang berhak mengubah role akun pengguna.');
+      return;
+    }
+
     if (targetUserId === currentUser?.id) {
       alert('Anda tidak dapat mengubah role akun Anda sendiri.');
       return;
@@ -147,6 +152,11 @@ export const PenggunaTab: React.FC = () => {
 
   // 2. Toggle Status Aktif/Nonaktif User
   const handleToggleStatus = async (targetUserId: string, currentStatus: boolean, targetName: string) => {
+    if (!isAdmin) {
+      alert('Akses ditolak: Hanya Administrator yang berhak mengubah status akun pengguna.');
+      return;
+    }
+
     if (targetUserId === currentUser?.id) {
       alert('Anda tidak dapat menonaktifkan akun Anda sendiri.');
       return;
@@ -177,6 +187,11 @@ export const PenggunaTab: React.FC = () => {
 
   // 3. Admin Reset Password Pengguna Lain
   const handleOpenResetModal = (user: UserProfile) => {
+    if (!isAdmin) {
+      alert('Akses ditolak: Hanya Administrator yang berhak mereset password pengguna.');
+      return;
+    }
+
     setResetModalUser(user);
     setNewPassword('passbox123');
     setResetError('');
@@ -206,10 +221,15 @@ export const PenggunaTab: React.FC = () => {
           target_user_id: resetModalUser.id,
           new_password: newPassword.trim(),
         });
-        if (fallbackErr) throw fallbackErr;
+        if (fallbackErr) {
+          throw new Error(
+            `Gagal mereset password di database: ${fallbackErr.message || error.message}. Pastikan script SQL sudah dijalankan di Supabase.`
+          );
+        }
       }
 
-      setSuccessMsg(`Password akun "${resetModalUser.full_name}" (@${resetModalUser.username}) berhasil direset.`);
+      setUsers(users.map(u => u.id === resetModalUser.id ? { ...u, password_hash: 'active' } : u));
+      setSuccessMsg(`Password akun "${resetModalUser.full_name}" (@${resetModalUser.username}) berhasil direset & diaktifkan.`);
       setResetModalUser(null);
       setTimeout(() => setSuccessMsg(''), 5000);
     } catch (err: any) {
@@ -235,8 +255,38 @@ export const PenggunaTab: React.FC = () => {
     try {
       const cleanUsername = username.trim().toLowerCase();
       const passToUse = password.trim() || 'passbox123';
-      const newId: string = crypto.randomUUID();
 
+      // 1. Coba panggil RPC atomic admin_create_user (enkripsi Bcrypt langsung, tanpa pending)
+      const { data: createdData, error: rpcErr } = await supabase.rpc('admin_create_user', {
+        admin_user_id: currentUser?.id,
+        p_username: cleanUsername,
+        p_full_name: fullName.trim(),
+        p_role: role,
+        p_password: passToUse,
+      });
+
+      if (!rpcErr && createdData) {
+        const addedUser: UserProfile = {
+          id: createdData.id,
+          username: createdData.username,
+          full_name: createdData.full_name,
+          role: createdData.role,
+          is_active: createdData.is_active,
+          password_hash: 'active',
+        };
+        setUsers(prev => [...prev.filter(u => u.id !== addedUser.id), addedUser]);
+        setShowAddModal(false);
+        setUsername('');
+        setFullName('');
+        setPassword('');
+        setRole('checker');
+        setSuccessMsg(`Pengguna "${cleanUsername}" berhasil ditambahkan dengan password aktif.`);
+        setTimeout(() => setSuccessMsg(''), 4000);
+        return;
+      }
+
+      // 2. Fallback jika RPC admin_create_user belum ada di database Supabase
+      const newId: string = crypto.randomUUID();
       const newProfile: UserProfile = {
         id: newId,
         username: cleanUsername,
@@ -252,16 +302,32 @@ export const PenggunaTab: React.FC = () => {
           password_hash: 'pending'
         }]);
 
-      if (profileErr && !profileErr.message.includes('password_hash')) {
+      if (profileErr) {
         throw profileErr;
       }
 
-      await supabase.rpc('change_user_password', {
+      // Jalankan enkripsi password melalui RPC
+      const { error: resetErr } = await supabase.rpc('admin_reset_user_password', {
+        admin_user_id: currentUser?.id,
         target_user_id: newId,
         new_password: passToUse,
       });
 
-      setUsers([...users, newProfile]);
+      if (resetErr) {
+        const { error: changeErr } = await supabase.rpc('change_user_password', {
+          target_user_id: newId,
+          new_password: passToUse,
+        });
+
+        if (changeErr) {
+          throw new Error(
+            `Pengguna berhasil dibuat, namun enkripsi password di database gagal (RPC Error: ${changeErr.message}). Password berstatus pending. Silakan jalankan update SQL di Supabase.`
+          );
+        }
+      }
+
+      newProfile.password_hash = 'active';
+      setUsers(prev => [...prev.filter(u => u.id !== newId), newProfile]);
       setShowAddModal(false);
       setUsername('');
       setFullName('');
@@ -279,6 +345,11 @@ export const PenggunaTab: React.FC = () => {
   // 5. Konfigurasi Master Pass Box Handlers
   const handleAddPassBox = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageMasterData) {
+      alert('Akses ditolak: Akun SPV tidak memiliki wewenang mengubah Master Data Pass Box.');
+      return;
+    }
+
     if (!newPassBoxName.trim()) return;
 
     const trimmed = newPassBoxName.trim();
@@ -319,6 +390,11 @@ export const PenggunaTab: React.FC = () => {
   };
 
   const handleTogglePassBoxStatus = async (pb: PassBoxMaster) => {
+    if (!canManageMasterData) {
+      alert('Akses ditolak: Akun SPV tidak memiliki wewenang mengubah Master Data Pass Box.');
+      return;
+    }
+
     const updatedStatus = !pb.is_active;
     try {
       await supabase
@@ -337,6 +413,11 @@ export const PenggunaTab: React.FC = () => {
   };
 
   const handleDeletePassBox = async (pb: PassBoxMaster) => {
+    if (!canManageMasterData) {
+      alert('Akses ditolak: Akun SPV tidak memiliki wewenang menghapus Master Data Pass Box.');
+      return;
+    }
+
     if (pb.name === 'Pass Box 1' || pb.name === 'Pass Box 2') {
       alert('Pass Box default sistem tidak dapat dihapus. Anda dapat menonaktifkannya jika tidak digunakan.');
       return;
@@ -389,10 +470,12 @@ export const PenggunaTab: React.FC = () => {
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center space-x-2">
             <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-sky-600" />
-            <span>Panel Administrator & Konfigurasi</span>
+            <span>{isAdmin ? 'Panel Administrator & Konfigurasi' : 'Panel Supervisi & Konfigurasi'}</span>
           </h1>
           <p className="text-xs font-medium text-slate-500 mt-0.5">
-            Kelola otorisasi akun pengguna dan atur master pilihan Pass Box cleanroom.
+            {isAdmin 
+              ? 'Kelola otorisasi akun pengguna dan atur master pilihan Pass Box cleanroom.' 
+              : 'Tinjauan tim pengguna dan status master Pass Box cleanroom (Mode Supervisi).'}
           </p>
         </div>
 
@@ -424,6 +507,16 @@ export const PenggunaTab: React.FC = () => {
         </div>
       </div>
 
+      {/* SPV Notification Banner */}
+      {isSpv && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs px-4 py-3 rounded-xl flex items-center space-x-2.5 shadow-xs">
+          <Shield className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <div className="flex-1">
+            <span className="font-bold">Mode Supervisi (Read-Only Master Data):</span> Anda masuk dengan akun <strong>SPV</strong>. Sesuai kebijakan otorisasi, SPV memiliki akses pengawasan & pelaporan data, namun <strong>tidak memiliki otoritas mengubah Master Data Pass Box</strong> atau mengubah konfigurasi pengguna seperti Administrator.
+          </div>
+        </div>
+      )}
+
       {/* ==================================================== */}
       {/* SECTION 1: KELOLA PENGGUNA (activeSubTab === 'users') */}
       {/* ==================================================== */}
@@ -452,13 +545,15 @@ export const PenggunaTab: React.FC = () => {
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
 
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="flex items-center space-x-2 bg-sky-600 hover:bg-sky-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm transition"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Tambah Pengguna</span>
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="flex items-center space-x-2 bg-sky-600 hover:bg-sky-700 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm transition"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  <span>Tambah Pengguna</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -488,22 +583,35 @@ export const PenggunaTab: React.FC = () => {
                         <span className="text-xs text-slate-500 font-mono">@{u.username}</span>
                       </div>
 
-                      <span
-                        className={`inline-flex items-center space-x-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
-                          u.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        {u.is_active ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
-                        <span>{u.is_active ? 'Aktif' : 'Nonaktif'}</span>
-                      </span>
+                      <div className="flex items-center space-x-1.5 flex-wrap">
+                        {u.password_hash === 'pending' && (
+                          <span className="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">
+                            ⚠️ Pass Pending
+                          </span>
+                        )}
+                        <span
+                          className={`inline-flex items-center space-x-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                            u.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500'
+                          }`}
+                        >
+                          {u.is_active ? <CheckCircle2 className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
+                          <span>{u.is_active ? 'Aktif' : 'Nonaktif'}</span>
+                        </span>
+                      </div>
                     </div>
 
                     <div className="flex items-center justify-between bg-slate-50 border border-slate-200/80 p-2 rounded-lg text-xs">
                       <span className="font-medium text-slate-600">Role Otorisasi:</span>
-                      {isCurrent ? (
-                        <span className="font-bold text-emerald-700 uppercase flex items-center">
-                          <Shield className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-                          {u.role} (Terkunci)
+                      {(!isAdmin || isCurrent) ? (
+                        <span className={`font-bold uppercase flex items-center px-2 py-0.5 rounded text-[10px] ${
+                          u.role === 'admin'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : u.role === 'spv'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : 'bg-sky-50 text-sky-700 border border-sky-200'
+                        }`}>
+                          <Shield className="w-3 h-3 mr-1 text-slate-500" />
+                          {u.role === 'admin' ? 'ADMIN' : u.role === 'spv' ? 'SPV' : 'CHECKER'} {isCurrent ? '(Anda)' : '(Terkunci)'}
                         </span>
                       ) : (
                         <select
@@ -513,42 +621,55 @@ export const PenggunaTab: React.FC = () => {
                           className={`font-bold px-2 py-1 rounded-md border focus:outline-none transition ${
                             u.role === 'admin'
                               ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                              : u.role === 'spv'
+                              ? 'bg-amber-50 border-amber-200 text-amber-700'
                               : 'bg-sky-50 border-sky-200 text-sky-700'
                           }`}
                         >
                           <option value="checker">CHECKER</option>
+                          <option value="spv">SPV / SUPERVISOR</option>
                           <option value="admin">ADMINISTRATOR</option>
                         </select>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
-                      <button
-                        onClick={() => handleOpenResetModal(u)}
-                        className="flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition"
-                      >
-                        <KeyRound className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Reset Pass</span>
-                      </button>
-
-                      {!isCurrent ? (
+                    {isAdmin ? (
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
                         <button
-                          disabled={isProcessing}
-                          onClick={() => handleToggleStatus(u.id, u.is_active, u.full_name)}
-                          className={`py-2 px-2.5 rounded-lg text-xs font-semibold border transition disabled:opacity-50 text-center ${
-                            u.is_active
-                              ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
-                              : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                          onClick={() => handleOpenResetModal(u)}
+                          className={`flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-lg text-xs font-semibold border transition ${
+                            u.password_hash === 'pending'
+                              ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 ring-2 ring-amber-400/40 font-bold'
+                              : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
                           }`}
                         >
-                          {isProcessing ? 'Proses...' : u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                          <KeyRound className="w-3.5 h-3.5 text-amber-600" />
+                          <span>{u.password_hash === 'pending' ? 'Aktifkan Pass' : 'Reset Pass'}</span>
                         </button>
-                      ) : (
-                        <div className="flex items-center justify-center text-[11px] text-slate-400 bg-slate-50 rounded-lg border border-slate-200/60 font-medium">
-                          Akun Aktif
-                        </div>
-                      )}
-                    </div>
+
+                        {!isCurrent ? (
+                          <button
+                            disabled={isProcessing}
+                            onClick={() => handleToggleStatus(u.id, u.is_active, u.full_name)}
+                            className={`py-2 px-2.5 rounded-lg text-xs font-semibold border transition disabled:opacity-50 text-center ${
+                              u.is_active
+                                ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                            }`}
+                          >
+                            {isProcessing ? 'Proses...' : u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                          </button>
+                        ) : (
+                          <div className="flex items-center justify-center text-[11px] text-slate-400 bg-slate-50 rounded-lg border border-slate-200/60 font-medium">
+                            Akun Aktif
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="pt-1 border-t border-slate-100 text-[11px] text-slate-400 text-center italic">
+                        Pengelolaan akun khusus Administrator
+                      </div>
+                    )}
                   </div>
                 );
               })
@@ -597,10 +718,17 @@ export const PenggunaTab: React.FC = () => {
                         </td>
 
                         <td className="py-3 px-4">
-                          {isCurrent ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <Shield className="w-3 h-3 mr-1 text-emerald-600" />
-                              {u.role} (Terkunci)
+                          {(!isAdmin || isCurrent) ? (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase ${
+                              u.role === 'admin'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : u.role === 'spv'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                                : 'bg-sky-50 text-sky-700 border border-sky-200'
+                            }`}>
+                              <Shield className="w-3 h-3 mr-1 text-slate-500" />
+                              {u.role === 'admin' ? 'ADMINISTRATOR' : u.role === 'spv' ? 'SPV / SUPERVISOR' : 'CHECKER'}
+                              {isCurrent && <span className="ml-1 text-[9px] text-slate-500 font-normal">(Anda)</span>}
                             </span>
                           ) : (
                             <select
@@ -610,61 +738,79 @@ export const PenggunaTab: React.FC = () => {
                               className={`text-xs font-semibold px-2 py-1 rounded-lg border focus:outline-none transition ${
                                 u.role === 'admin'
                                   ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                                  : u.role === 'spv'
+                                  ? 'bg-amber-50 border-amber-200 text-amber-700'
                                   : 'bg-sky-50 border-sky-200 text-sky-700'
                               } disabled:opacity-50 cursor-pointer`}
                             >
                               <option value="checker">CHECKER</option>
+                              <option value="spv">SPV / SUPERVISOR</option>
                               <option value="admin">ADMINISTRATOR</option>
                             </select>
                           )}
                         </td>
 
                         <td className="py-3 px-4">
-                          <span
-                            className={`inline-flex items-center space-x-1 text-xs font-medium ${
-                              u.is_active ? 'text-emerald-600' : 'text-slate-400'
-                            }`}
-                          >
-                            {u.is_active ? (
-                              <>
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                                <span>Aktif</span>
-                              </>
-                            ) : (
-                              <>
-                                <XCircle className="w-3.5 h-3.5" />
-                                <span>Nonaktif</span>
-                              </>
+                          <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                            <span
+                              className={`inline-flex items-center space-x-1 text-xs font-medium ${
+                                u.is_active ? 'text-emerald-600' : 'text-slate-400'
+                              }`}
+                            >
+                              {u.is_active ? (
+                                <>
+                                  <CheckCircle2 className="w-3.5 h-3.5" />
+                                  <span>Aktif</span>
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="w-3.5 h-3.5" />
+                                  <span>Nonaktif</span>
+                                </>
+                              )}
+                            </span>
+                            {u.password_hash === 'pending' && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 animate-pulse" title="Password belum aktif. Klik tombol Aktifkan Pass.">
+                                ⚠️ Pass Pending
+                              </span>
                             )}
-                          </span>
+                          </div>
                         </td>
 
                         <td className="py-3 px-4 text-center">
-                          <div className="flex items-center justify-center space-x-1.5">
-                            <button
-                              onClick={() => handleOpenResetModal(u)}
-                              className="flex items-center space-x-1 px-2.5 py-1 rounded text-[11px] font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition"
-                            >
-                              <KeyRound className="w-3 h-3 text-amber-600" />
-                              <span>Reset Pass</span>
-                            </button>
-
-                            {!isCurrent ? (
+                          {isAdmin ? (
+                            <div className="flex items-center justify-center space-x-1.5">
                               <button
-                                disabled={isProcessing}
-                                onClick={() => handleToggleStatus(u.id, u.is_active, u.full_name)}
-                                className={`px-2.5 py-1 rounded text-[11px] font-medium border transition disabled:opacity-50 ${
-                                  u.is_active
-                                    ? 'border-rose-200 text-rose-600 hover:bg-rose-50'
-                                    : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
+                                onClick={() => handleOpenResetModal(u)}
+                                className={`flex items-center space-x-1 px-2.5 py-1 rounded text-[11px] font-semibold border transition ${
+                                  u.password_hash === 'pending'
+                                    ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-400 ring-1 ring-amber-400 font-bold'
+                                    : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border-amber-200'
                                 }`}
                               >
-                                {isProcessing ? '...' : u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                                <KeyRound className="w-3 h-3 text-amber-600" />
+                                <span>{u.password_hash === 'pending' ? 'Aktifkan Pass' : 'Reset Pass'}</span>
                               </button>
-                            ) : (
-                              <span className="text-slate-400 text-[11px] px-2">Akun Aktif</span>
-                            )}
-                          </div>
+
+                              {!isCurrent ? (
+                                <button
+                                  disabled={isProcessing}
+                                  onClick={() => handleToggleStatus(u.id, u.is_active, u.full_name)}
+                                  className={`px-2.5 py-1 rounded text-[11px] font-medium border transition disabled:opacity-50 ${
+                                    u.is_active
+                                      ? 'border-rose-200 text-rose-600 hover:bg-rose-50'
+                                      : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
+                                  }`}
+                                >
+                                  {isProcessing ? '...' : u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                                </button>
+                              ) : (
+                                <span className="text-slate-400 text-[11px] px-2">Akun Aktif</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-[11px] italic">Khusus Admin</span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -691,28 +837,38 @@ export const PenggunaTab: React.FC = () => {
             </p>
           </div>
 
-          {/* Form Tambah Pass Box */}
-          <form onSubmit={handleAddPassBox} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
-            <div className="relative flex-1">
-              <Box className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                required
-                placeholder="Contoh: Pass Box 3, Pass Box Sampling..."
-                value={newPassBoxName}
-                onChange={(e) => setNewPassBoxName(e.target.value)}
-                className="w-full pl-9 pr-3.5 h-10 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
-              />
+          {/* Form Tambah Pass Box (Khusus Admin) / Notice Read-Only (SPV) */}
+          {canManageMasterData ? (
+            <form onSubmit={handleAddPassBox} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <div className="relative flex-1">
+                <Box className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Pass Box 3, Pass Box Sampling..."
+                  value={newPassBoxName}
+                  onChange={(e) => setNewPassBoxName(e.target.value)}
+                  className="w-full pl-9 pr-3.5 h-10 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={savingPassBox}
+                className="h-10 px-4 flex items-center justify-center space-x-1.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-lg text-xs shadow-sm transition disabled:opacity-50"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{savingPassBox ? 'Menyimpan...' : 'Tambah Pass Box'}</span>
+              </button>
+            </form>
+          ) : (
+            <div className="bg-amber-50/70 border border-amber-200/90 rounded-xl p-3.5 text-xs text-amber-900 flex items-start space-x-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">Akses Read-Only Master Data:</span>
+                <span>Akun dengan role SPV tidak memiliki wewenang untuk menambah, mengubah status, atau menghapus Master Data Pass Box. Konfigurasi ini hanya dapat dilakukan oleh Administrator.</span>
+              </div>
             </div>
-            <button
-              type="submit"
-              disabled={savingPassBox}
-              className="h-10 px-4 flex items-center justify-center space-x-1.5 bg-sky-600 hover:bg-sky-700 text-white font-semibold rounded-lg text-xs shadow-sm transition disabled:opacity-50"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{savingPassBox ? 'Menyimpan...' : 'Tambah Pass Box'}</span>
-            </button>
-          </form>
+          )}
 
           {/* List of Pass Boxes */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
@@ -748,28 +904,35 @@ export const PenggunaTab: React.FC = () => {
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
-                    <button
-                      onClick={() => handleTogglePassBoxStatus(pb)}
-                      className={`px-3 py-1 rounded-lg text-xs font-semibold border transition ${
-                        pb.is_active
-                          ? 'border-slate-300 text-slate-600 hover:bg-slate-100'
-                          : 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
-                      }`}
-                    >
-                      {pb.is_active ? 'Nonaktifkan' : 'Aktifkan'}
-                    </button>
-
-                    {!isDefault && (
+                  {canManageMasterData ? (
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
                       <button
-                        onClick={() => handleDeletePassBox(pb)}
-                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
-                        title="Hapus master ini"
+                        onClick={() => handleTogglePassBoxStatus(pb)}
+                        className={`px-3 py-1 rounded-lg text-xs font-semibold border transition ${
+                          pb.is_active
+                            ? 'border-slate-300 text-slate-600 hover:bg-slate-100'
+                            : 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
+                        }`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        {pb.is_active ? 'Nonaktifkan' : 'Aktifkan'}
                       </button>
-                    )}
-                  </div>
+
+                      {!isDefault && (
+                        <button
+                          onClick={() => handleDeletePassBox(pb)}
+                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
+                          title="Hapus master ini"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">
+                      <span>Status Pilihan</span>
+                      <span className="font-medium text-slate-500 italic">Read-Only</span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -921,7 +1084,8 @@ export const PenggunaTab: React.FC = () => {
                   className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
                 >
                   <option value="checker">Checker (Hanya Input & Lihat Data)</option>
-                  <option value="admin">Administrator (Full Access + Rekap & Manajemen Pengguna)</option>
+                  <option value="spv">SPV / Supervisor (Monitoring & Supervisi - Tanpa Otoritas Master Data)</option>
+                  <option value="admin">Administrator (Full Access & Konfigurasi Master Data)</option>
                 </select>
               </div>
 

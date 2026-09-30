@@ -6,8 +6,10 @@ import { RekapTab } from './components/RekapTab';
 import { PenggunaTab } from './components/PenggunaTab';
 import { LoginView } from './components/LoginView';
 
+import { SessionTimeoutModal } from './components/SessionTimeoutModal';
+
 const MainLayout: React.FC = () => {
-  const { user, loading, isAdmin } = useAuth();
+  const { user, loading, isAdmin, isSpv, showIdleWarning, idleRemainingSeconds, extendSession, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<'data' | 'rekap' | 'pengguna'>('data');
 
   if (loading && !user) {
@@ -31,9 +33,17 @@ const MainLayout: React.FC = () => {
 
       <main className="flex-1 pb-12">
         {activeTab === 'data' && <DataTab />}
-        {activeTab === 'rekap' && isAdmin && <RekapTab />}
-        {activeTab === 'pengguna' && isAdmin && <PenggunaTab />}
+        {activeTab === 'rekap' && (isAdmin || isSpv) && <RekapTab />}
+        {activeTab === 'pengguna' && (isAdmin || isSpv) && <PenggunaTab />}
       </main>
+
+      {/* Session Timeout Warning Modal */}
+      <SessionTimeoutModal
+        isOpen={showIdleWarning}
+        remainingSeconds={idleRemainingSeconds}
+        onExtend={extendSession}
+        onLogout={logout}
+      />
     </div>
   );
 };

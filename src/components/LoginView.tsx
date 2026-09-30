@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Lock, User, ArrowRight, AlertCircle } from 'lucide-react';
+import { Lock, User, ArrowRight, AlertCircle, Clock } from 'lucide-react';
 
 export const LoginView: React.FC = () => {
   const { login } = useAuth();
@@ -8,6 +8,14 @@ export const LoginView: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [sessionNotice, setSessionNotice] = useState<string>(() => {
+    const notice = localStorage.getItem('pass_box_session_notice');
+    if (notice) {
+      localStorage.removeItem('pass_box_session_notice');
+      return notice;
+    }
+    return '';
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -15,6 +23,7 @@ export const LoginView: React.FC = () => {
 
     setLoading(true);
     setErrorMsg('');
+    setSessionNotice('');
 
     const res = await login(username.trim(), password);
     if (!res.success) {
@@ -35,11 +44,25 @@ export const LoginView: React.FC = () => {
           <p className="text-xs text-slate-500 mt-1">Sistem Otentikasi dan Monitoring Pass Box RMPM</p>
         </div>
 
+        {/* Session Timeout Notice Alert */}
+        {sessionNotice && !errorMsg && (
+          <div className="mb-5 p-3.5 rounded-xl bg-amber-50 text-amber-900 text-xs border border-amber-300 flex items-start space-x-2.5 shadow-sm leading-relaxed animate-fadeIn">
+            <Clock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <span className="font-bold text-amber-950 block mb-0.5">Sesi Berakhir Otomatis:</span>
+              <span className="text-amber-800 font-medium block">{sessionNotice}</span>
+            </div>
+          </div>
+        )}
+
         {/* Error Alert */}
         {errorMsg && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-50 text-rose-700 text-xs border border-rose-200 flex items-start space-x-2">
+          <div className="mb-5 p-3.5 rounded-xl bg-rose-50 text-rose-800 text-xs border border-rose-200 flex items-start space-x-2.5 shadow-sm leading-relaxed animate-fadeIn">
             <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-            <span>{errorMsg}</span>
+            <div className="flex-1">
+              <span className="font-bold text-rose-900 block mb-0.5">Informasi Login:</span>
+              <span className="text-rose-700 font-medium block whitespace-pre-line">{errorMsg}</span>
+            </div>
           </div>
         )}
 

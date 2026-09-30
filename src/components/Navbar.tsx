@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { BarChart2, Users, LogOut, Database, ShieldCheck, User } from 'lucide-react';
+import { BarChart2, Users, LogOut, Database, ShieldCheck, Shield, User } from 'lucide-react';
 
 interface NavbarProps {
   activeTab: 'data' | 'rekap' | 'pengguna';
@@ -8,7 +8,9 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, isAdmin, isSpv, logout } = useAuth();
+
+  const canAccessManagement = isAdmin || isSpv;
 
   return (
     <header className="bg-[#0f172a] text-white shadow-md select-none sticky top-0 z-40">
@@ -40,7 +42,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
               <span>Data</span>
             </button>
 
-            {isAdmin && (
+            {canAccessManagement && (
               <>
                 <button
                   onClick={() => setActiveTab('rekap')}
@@ -75,15 +77,33 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
           {/* User Profile Pill */}
           <div className="flex items-center space-x-1.5 sm:space-x-2 bg-slate-800/70 border border-slate-700/60 rounded-lg px-2 sm:px-2.5 py-1">
             <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 flex-shrink-0">
-              {isAdmin ? <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> : <User className="w-3.5 h-3.5 text-sky-400" />}
+              {isAdmin ? (
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+              ) : isSpv ? (
+                <Shield className="w-3.5 h-3.5 text-amber-400" />
+              ) : (
+                <User className="w-3.5 h-3.5 text-sky-400" />
+              )}
             </div>
             <div className="text-left sm:text-right leading-none max-w-[110px] sm:max-w-none truncate">
               <div className="text-[11px] sm:text-xs font-bold text-white truncate">
                 {user?.full_name || user?.username || 'Pengguna'}
               </div>
               <div className="text-[9px] font-bold tracking-wider uppercase">
-                <span className={isAdmin ? 'text-emerald-400' : 'text-sky-400'}>
-                  {user?.role || 'CHECKER'}
+                <span
+                  className={
+                    isAdmin
+                      ? 'text-emerald-400'
+                      : isSpv
+                      ? 'text-amber-400'
+                      : 'text-sky-400'
+                  }
+                >
+                  {user?.role === 'admin'
+                    ? 'ADMINISTRATOR'
+                    : user?.role === 'spv'
+                    ? 'SPV / SUPERVISOR'
+                    : 'CHECKER'}
                 </span>
               </div>
             </div>
@@ -115,7 +135,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
           <span>Data</span>
         </button>
 
-        {isAdmin && (
+        {canAccessManagement && (
           <>
             <button
               onClick={() => setActiveTab('rekap')}

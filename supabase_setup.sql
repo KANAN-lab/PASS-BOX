@@ -21,7 +21,7 @@ drop table if exists public.profiles cascade;
 drop type if exists user_role cascade;
 
 -- 4. Buat ENUM Role
-create type user_role as enum ('admin', 'checker');
+create type user_role as enum ('admin', 'spv', 'checker');
 
 -- 5. Buat Tabel Profiles (Manajemen Akun & Role)
 create table public.profiles (
@@ -91,14 +91,14 @@ returns table (
   is_active boolean
 )
 language plpgsql
-security definer set search_path = public
+security definer set search_path = public, extensions
 as $$
 begin
   return query
   select p.id, p.username, p.full_name, p.role, p.is_active
   from public.profiles p
   where lower(p.username) = lower(trim(p_username))
-    and p.password_hash = crypt(p_password, p.password_hash)
+    and p.password_hash = extensions.crypt(p_password, p.password_hash)
     and p.is_active = true;
 end;
 $$;
@@ -109,7 +109,7 @@ grant execute on function public.verify_user_login(text, text) to anon, authenti
 create or replace function public.change_user_role(admin_user_id uuid, target_user_id uuid, new_role user_role)
 returns void
 language plpgsql
-security definer set search_path = public
+security definer set search_path = public, extensions
 as $$
 declare
   is_caller_admin boolean;
@@ -139,11 +139,15 @@ $$;
 create or replace function public.change_user_password(target_user_id uuid, new_password text)
 returns void
 language plpgsql
-security definer set search_path = public
+security definer set search_path = public, extensions
 as $$
 begin
+  if length(new_password) < 6 then
+    raise exception 'Password minimal harus 6 karakter.';
+  end if;
+
   update public.profiles
-  set password_hash = crypt(new_password, gen_salt('bf')),
+  set password_hash = extensions.crypt(new_password, extensions.gen_salt('bf')),
       updated_at = now()
   where id = target_user_id;
 end;
@@ -157,7 +161,7 @@ create or replace function public.admin_reset_user_password(
 )
 returns void
 language plpgsql
-security definer set search_path = public
+security definer set search_path = public, extensions
 as $$
 declare
   is_caller_admin boolean;
@@ -176,14 +180,80 @@ begin
   end if;
 
   update public.profiles
-  set password_hash = crypt(new_password, gen_salt('bf')),
+  set password_hash = extensions.crypt(new_password, extensions.gen_salt('bf')),
       updated_at = now()
   where id = target_user_id;
 end;
 $$;
 
-grant execute on function public.admin_reset_user_password(uuid, uuid, text) to anon, authenticated;
-grant execute on function public.change_user_password(uuid, text) to anon, authenticated;
+-- 11c. Fungsi Khusus Admin untuk Tambah Pengguna Baru (Langsung Terenkripsi Bcrypt, Tanpa Status Pending)
+create or replace function public.admin_create_user(
+  admin_user_id uuid,
+  p_username text,
+  p_full_name text,
+  p_role user_role,
+  p_password text
+)
+returns public.profiles
+language plpgsql
+security definer set search_path = public, extensions
+as $$
+declare
+  is_caller_admin boolean;
+  new_profile public.profiles;
+  clean_uname text;
+begin
+  if admin_user_id is not null then
+    select exists (
+      select 1 from public.profiles
+      where id = admin_user_id and role = 'admin' and is_active = true
+    ) into is_caller_admin;
+
+    if not is_caller_admin then
+      raise exception 'Akses ditolak: Hanya administrator yang berhak menambah pengguna baru.';
+    end if;
+  end if;
+
+  clean_uname := lower(trim(p_username));
+  if length(clean_uname) < 3 then
+    raise exception 'Username minimal harus 3 karakter.';
+  end if;
+
+  if exists (select 1 from public.profiles where lower(username) = clean_uname) then
+    raise exception 'Username "%" sudah terdaftar. Silakan gunakan username lain.', clean_uname;
+  end if;
+
+  if length(trim(p_password)) < 6 then
+    raise exception 'Password minimal harus 6 karakter.';
+  end if;
+
+  insert into public.profiles (
+    id,
+    username,
+    full_name,
+    role,
+    password_hash,
+    is_active
+  )
+  values (
+    gen_random_uuid(),
+    clean_uname,
+    trim(p_full_name),
+    p_role,
+    extensions.crypt(trim(p_password), extensions.gen_salt('bf')),
+    true
+  )
+  returning * into new_profile;
+
+  return new_profile;
+end;
+$$;
+
+grant execute on function public.verify_user_login(text, text) to anon, authenticated, service_role;
+grant execute on function public.change_user_role(uuid, uuid, user_role) to anon, authenticated, service_role;
+grant execute on function public.change_user_password(uuid, text) to anon, authenticated, service_role;
+grant execute on function public.admin_reset_user_password(uuid, uuid, text) to anon, authenticated, service_role;
+grant execute on function public.admin_create_user(uuid, text, text, user_role, text) to anon, authenticated, service_role;
 
 
 -- 12. Enable Row Level Security (RLS)
@@ -249,6 +319,7 @@ alter publication supabase_realtime add table public.pass_boxes;
 
 -- 14. Seed Data Akun Default (Password terenkripsi Bcrypt):
 --   cheker1 : checker123
+--   spv     : spv123
 --   admin   : admin123
 insert into public.profiles (id, username, full_name, role, password_hash, is_active)
 values
@@ -257,7 +328,15 @@ values
     'cheker1',
     'Cheker 1',
     'checker',
-    crypt('checker123', gen_salt('bf')),
+    extensions.crypt('checker123', extensions.gen_salt('bf')),
+    true
+  ),
+  (
+    '33333333-3333-3333-3333-333333333333',
+    'spv',
+    'Supervisor',
+    'spv',
+    extensions.crypt('spv123', extensions.gen_salt('bf')),
     true
   ),
   (
@@ -265,7 +344,7 @@ values
     'admin',
     'Admin',
     'admin',
-    crypt('admin123', gen_salt('bf')),
+    extensions.crypt('admin123', extensions.gen_salt('bf')),
     true
   )
 on conflict (username) do update set
