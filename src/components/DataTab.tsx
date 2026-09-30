@@ -58,8 +58,13 @@ export const DataTab: React.FC = () => {
   const [editingLog, setEditingLog] = useState<PassBoxLog | null>(null);
 
   const noProInputRef = useRef<HTMLInputElement>(null);
-  const tableRef = useRef<HTMLTableElement | null>(null);
+  const dtContainerRef = useRef<HTMLDivElement | null>(null);
   const dtInstanceRef = useRef<any>(null);
+  const logsRef = useRef<PassBoxLog[]>([]);
+
+  useEffect(() => {
+    logsRef.current = logs;
+  }, [logs]);
 
   // Fetch active pass boxes
   const fetchPassBoxes = async () => {
@@ -296,8 +301,8 @@ export const DataTab: React.FC = () => {
 
   // Delegated click handler untuk tombol aksi (Edit & Delete) di DataTables.js
   useEffect(() => {
-    const tableEl = tableRef.current;
-    if (!tableEl) return;
+    const containerEl = dtContainerRef.current;
+    if (!containerEl) return;
 
     const handleActionClick = (e: MouseEvent) => {
       const btn = (e.target as HTMLElement).closest('[data-dt-action]');
@@ -306,7 +311,7 @@ export const DataTab: React.FC = () => {
       const idStr = btn.getAttribute('data-id');
       if (!idStr) return;
       const logId = Number(idStr);
-      const targetLog = logs.find((l) => l.id === logId);
+      const targetLog = logsRef.current.find((l) => l.id === logId);
       if (!targetLog) return;
 
       if (action === 'edit') {
@@ -316,18 +321,39 @@ export const DataTab: React.FC = () => {
       }
     };
 
-    tableEl.addEventListener('click', handleActionClick);
+    containerEl.addEventListener('click', handleActionClick);
     return () => {
-      tableEl.removeEventListener('click', handleActionClick);
+      containerEl.removeEventListener('click', handleActionClick);
     };
-  }, [logs, isAdmin, isSpv, user?.id]);
+  }, []);
 
-  // Inisialisasi dan sinkronisasi DataTables.js
+  // Inisialisasi dan sinkronisasi DataTables.js di dalam container terisolasi (Uncontrolled DOM)
   useEffect(() => {
-    if (loading || !tableRef.current) return;
+    if (loading || !dtContainerRef.current) return;
 
     if (!dtInstanceRef.current) {
-      dtInstanceRef.current = new DataTable(tableRef.current, {
+      // Injeksi markup tabel secara murni di dalam container agar React Virtual DOM tidak konflik
+      dtContainerRef.current.innerHTML = `
+        <table class="display w-full text-left border-collapse text-xs" style="width: 100%">
+          <thead>
+            <tr class="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+              <th class="py-2.5 px-3 w-12 text-center" title="Nomor Baris">NO</th>
+              <th class="py-2.5 px-3 w-20 text-center" title="Klik untuk mengurutkan Tipe">TIPE</th>
+              <th class="py-2.5 px-3" title="Klik untuk mengurutkan No PRO">NO PRO</th>
+              <th class="py-2.5 px-3" title="Klik untuk mengurutkan Tanggal">TANGGAL</th>
+              <th class="py-2.5 px-3" title="Klik untuk mengurutkan Pass Box">PILIHAN PASS BOX</th>
+              <th class="py-2.5 px-3" title="Klik untuk mengurutkan Checker">DIINPUT OLEH</th>
+              <th class="py-2.5 px-3 text-center w-20" title="Aksi Baris">AKSI</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      `;
+
+      const tableEl = dtContainerRef.current.querySelector('table');
+      if (!tableEl) return;
+
+      dtInstanceRef.current = new DataTable(tableEl, {
         data: filteredLogs,
         columns: [
           {
@@ -448,8 +474,15 @@ export const DataTab: React.FC = () => {
   useEffect(() => {
     return () => {
       if (dtInstanceRef.current) {
-        dtInstanceRef.current.destroy();
+        try {
+          dtInstanceRef.current.destroy();
+        } catch (e) {
+          console.warn('Error cleanup DataTable:', e);
+        }
         dtInstanceRef.current = null;
+      }
+      if (dtContainerRef.current) {
+        dtContainerRef.current.innerHTML = '';
       }
     };
   }, []);
@@ -869,33 +902,17 @@ export const DataTab: React.FC = () => {
               </span>
             </div>
 
-            {loading ? (
+            {loading && (
               <div className="py-12 text-center text-slate-400 text-xs flex flex-col items-center justify-center space-y-2">
                 <div className="w-6 h-6 border-2 border-sky-600 border-t-transparent rounded-full animate-spin"></div>
                 <span>Memuat data log Pass Box...</span>
               </div>
-            ) : (
-              <table
-                ref={tableRef}
-                className="display w-full text-left border-collapse text-xs"
-                style={{ width: '100%' }}
-              >
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 uppercase tracking-wider text-[11px]">
-                    <th className="py-2.5 px-3 w-12 text-center" title="Nomor Baris">NO</th>
-                    <th className="py-2.5 px-3 w-20 text-center" title="Klik untuk mengurutkan Tipe">TIPE</th>
-                    <th className="py-2.5 px-3" title="Klik untuk mengurutkan No PRO">NO PRO</th>
-                    <th className="py-2.5 px-3" title="Klik untuk mengurutkan Tanggal">TANGGAL</th>
-                    <th className="py-2.5 px-3" title="Klik untuk mengurutkan Pass Box">PILIHAN PASS BOX</th>
-                    <th className="py-2.5 px-3" title="Klik untuk mengurutkan Checker">DIINPUT OLEH</th>
-                    <th className="py-2.5 px-3 text-center w-20" title="Aksi Baris">AKSI</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {/* DataTables.js mengisi dan mengatur baris secara otomatis */}
-                </tbody>
-              </table>
             )}
+
+            <div
+              ref={dtContainerRef}
+              className={`w-full overflow-x-auto ${loading ? 'hidden' : 'block'}`}
+            />
           </div>
         </div>
       </div>
