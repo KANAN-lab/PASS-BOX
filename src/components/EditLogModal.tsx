@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { PassBoxLog, KategoriPro, PassBoxMaster } from '../types';
-import { X, Save, Box } from 'lucide-react';
+import { X, Save, Box, AlertCircle } from 'lucide-react';
 
 interface EditLogModalProps {
   log: PassBoxLog | null;
   isOpen: boolean;
   onClose: () => void;
   availablePassBoxes?: PassBoxMaster[];
+  existingLogs?: PassBoxLog[];
   onSave: (updatedLog: { id: number; kategori_pro: KategoriPro; no_pro: string; tanggal: string; pass_box: string }) => Promise<void>;
 }
 
@@ -18,6 +19,7 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
     { id: 1, name: 'Pass Box 1', is_active: true },
     { id: 2, name: 'Pass Box 2', is_active: true },
   ],
+  existingLogs = [],
   onSave 
 }) => {
   const [kategoriPro, setKategoriPro] = useState<KategoriPro>('RM');
@@ -35,18 +37,46 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
     }
   }, [log]);
 
+  const duplicateWarning = useMemo(() => {
+    const clean = noPro.trim();
+    if (!clean) return null;
+    if (!/^\d+$/.test(clean)) {
+      return 'Nomor PRO harus berupa angka saja (numerik).';
+    }
+    if (log && existingLogs.length > 0) {
+      const match = existingLogs.find(
+        (l) => l.id !== log.id && String(l.no_pro).trim() === clean
+      );
+      if (match) {
+        return `Nomor PRO ${clean} sudah digunakan pada data lain (Tanggal: ${match.tanggal}, Pass Box: ${match.pass_box}).`;
+      }
+    }
+    return null;
+  }, [noPro, log, existingLogs]);
+
   if (!isOpen || !log) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!noPro.trim() || !tanggal || !passBox.trim()) return;
+    const cleanNoPro = noPro.trim();
+    if (!cleanNoPro || !tanggal || !passBox.trim()) return;
+
+    if (!/^\d+$/.test(cleanNoPro)) {
+      alert('PENTING: Nomor PRO harus berupa angka saja (numerik).');
+      return;
+    }
+
+    if (duplicateWarning) {
+      alert(duplicateWarning);
+      return;
+    }
 
     setSaving(true);
     try {
       await onSave({
         id: log.id,
         kategori_pro: kategoriPro,
-        no_pro: noPro.trim(),
+        no_pro: cleanNoPro,
         tanggal,
         pass_box: passBox.trim(),
       });
@@ -105,16 +135,26 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
 
           {/* 2. No Pro */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase mb-1 tracking-wider">
-              2. NO PRO
-            </label>
+            <div className="flex items-center justify-between mb-1 tracking-wider">
+              <label className="block text-xs font-bold text-slate-700 uppercase">
+                2. NO PRO (HANYA ANGKA)
+              </label>
+              <span className="text-[10px] text-slate-400 font-semibold">Numerik Saja</span>
+            </div>
             <input
               type="text"
               required
               value={noPro}
-              onChange={(e) => setNoPro(e.target.value)}
+              onChange={(e) => setNoPro(e.target.value.replace(/\D/g, ''))}
+              placeholder="Contoh: 105999"
               className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 font-mono"
             />
+            {duplicateWarning && (
+              <div className="mt-1.5 flex items-start space-x-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border bg-rose-50 text-rose-700 border-rose-200">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{duplicateWarning}</span>
+              </div>
+            )}
           </div>
 
           {/* 3. Tanggal */}
@@ -165,7 +205,7 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
             </button>
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || !noPro.trim() || !tanggal || !passBox.trim() || !!duplicateWarning}
               className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-700 rounded-lg transition disabled:opacity-50 shadow-sm"
             >
               <Save className="w-4 h-4" />

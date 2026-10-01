@@ -57,6 +57,23 @@ export const DataTab: React.FC = () => {
   // Edit modal
   const [editingLog, setEditingLog] = useState<PassBoxLog | null>(null);
 
+  // Deteksi duplikasi & validasi numerik real-time
+  const duplicateWarning = useMemo(() => {
+    const clean = noPro.trim();
+    if (!clean) return null;
+    if (!/^\d+$/.test(clean)) {
+      return { type: 'invalid' as const, message: 'Nomor PRO harus berupa angka saja (numerik).' };
+    }
+    const found = logs.find(l => String(l.no_pro).trim() === clean);
+    if (found) {
+      return {
+        type: 'duplicate' as const,
+        message: `Nomor PRO ${clean} sudah pernah diinput pada ${formatDateIndo(found.tanggal)} (${found.pass_box}) oleh ${found.user_name || 'Checker'}.`,
+      };
+    }
+    return null;
+  }, [noPro, logs]);
+
   const noProInputRef = useRef<HTMLInputElement>(null);
   const dtContainerRef = useRef<HTMLDivElement | null>(null);
   const dtInstanceRef = useRef<any>(null);
@@ -197,8 +214,13 @@ export const DataTab: React.FC = () => {
       alert('PENTING: Wajib memilih tipe PRO (RM atau PM) terlebih dahulu.');
       return;
     }
-    if (!noPro.trim()) {
+    const cleanNoPro = noPro.trim();
+    if (!cleanNoPro) {
       alert('PENTING: Wajib mengisi No PRO terlebih dahulu.');
+      return;
+    }
+    if (!/^\d+$/.test(cleanNoPro)) {
+      alert('PENTING: Nomor PRO harus berupa angka saja (numerik).');
       return;
     }
     if (!passBox.trim()) {
@@ -207,17 +229,39 @@ export const DataTab: React.FC = () => {
     }
     if (!tanggal) return;
 
+    // 1. Cek duplikasi di state lokal terlebih dahulu
+    const localMatch = logs.find(l => String(l.no_pro).trim() === cleanNoPro);
+    if (localMatch) {
+      alert(`PENTING: Nomor PRO ${cleanNoPro} SUDAH PERNAH DIINPUT!\n\nDetail Catatan:\n- Tanggal: ${formatDateIndo(localMatch.tanggal)}\n- Pilihan Pass Box: ${localMatch.pass_box}\n- Operator: ${localMatch.user_name || 'Tidak tercatat'}\n\nSatu nomor PRO tidak boleh diinput lebih dari satu kali.`);
+      return;
+    }
+
     setSubmitting(true);
-    const newEntry = {
-      kategori_pro: kategoriPro,
-      no_pro: noPro.trim(),
-      tanggal,
-      pass_box: passBox.trim(),
-      user_id: user?.id || null,
-      user_name: user?.full_name || user?.username || 'Checker',
-    };
 
     try {
+      // 2. Cek duplikasi langsung ke Supabase (perlindungan multi-user / shift)
+      const { data: dbMatch, error: checkError } = await supabase
+        .from('pass_box_logs')
+        .select('id, no_pro, tanggal, pass_box, user_name')
+        .eq('no_pro', cleanNoPro)
+        .limit(1);
+
+      if (!checkError && dbMatch && dbMatch.length > 0) {
+        const dup = dbMatch[0];
+        alert(`PENTING: Nomor PRO ${cleanNoPro} SUDAH PERNAH DIINPUT DI DATABASE!\n\nDetail Catatan:\n- Tanggal: ${formatDateIndo(dup.tanggal)}\n- Pilihan Pass Box: ${dup.pass_box}\n- Operator: ${dup.user_name || 'Tidak tercatat'}\n\nSatu nomor PRO tidak boleh diinput lebih dari satu kali.`);
+        setSubmitting(false);
+        return;
+      }
+
+      const newEntry = {
+        kategori_pro: kategoriPro,
+        no_pro: cleanNoPro,
+        tanggal,
+        pass_box: passBox.trim(),
+        user_id: user?.id || null,
+        user_name: user?.full_name || user?.username || 'Checker',
+      };
+
       const { data, error } = await supabase
         .from('pass_box_logs')
         .insert([newEntry])
@@ -264,12 +308,39 @@ export const DataTab: React.FC = () => {
       return;
     }
 
+    const cleanNoPro = updatedLog.no_pro.trim();
+    if (!/^\d+$/.test(cleanNoPro)) {
+      alert('PENTING: Nomor PRO harus berupa angka saja (numerik).');
+      return;
+    }
+
+    // Cek duplikasi di state lokal
+    const localMatch = logs.find(l => l.id !== updatedLog.id && String(l.no_pro).trim() === cleanNoPro);
+    if (localMatch) {
+      alert(`Nomor PRO ${cleanNoPro} sudah digunakan pada data lain (Tanggal: ${formatDateIndo(localMatch.tanggal)}, ${localMatch.pass_box}).`);
+      return;
+    }
+
     try {
+      // Cek duplikasi di Supabase
+      const { data: dbMatch, error: checkError } = await supabase
+        .from('pass_box_logs')
+        .select('id, no_pro, tanggal, pass_box, user_name')
+        .eq('no_pro', cleanNoPro)
+        .neq('id', updatedLog.id)
+        .limit(1);
+
+      if (!checkError && dbMatch && dbMatch.length > 0) {
+        const dup = dbMatch[0];
+        alert(`Nomor PRO ${cleanNoPro} sudah digunakan pada data lain di database (Tanggal: ${formatDateIndo(dup.tanggal)}, Operator: ${dup.user_name}).`);
+        return;
+      }
+
       const { error } = await supabase
         .from('pass_box_logs')
         .update({
           kategori_pro: updatedLog.kategori_pro,
-          no_pro: updatedLog.no_pro,
+          no_pro: cleanNoPro,
           tanggal: updatedLog.tanggal,
           pass_box: updatedLog.pass_box,
           updated_at: new Date().toISOString(),
@@ -277,11 +348,11 @@ export const DataTab: React.FC = () => {
         .eq('id', updatedLog.id);
 
       if (error) {
-        const updated = logs.map(l => l.id === updatedLog.id ? { ...l, ...updatedLog } : l);
+        const updated = logs.map(l => l.id === updatedLog.id ? { ...l, ...updatedLog, no_pro: cleanNoPro } : l);
         setLogs(updated);
         localStorage.setItem('local_pass_box_logs', JSON.stringify(updated));
       } else {
-        setLogs(logs.map(l => l.id === updatedLog.id ? { ...l, ...updatedLog } : l));
+        setLogs(logs.map(l => l.id === updatedLog.id ? { ...l, ...updatedLog, no_pro: cleanNoPro } : l));
       }
     } catch (err: any) {
       alert('Gagal mengupdate log: ' + err.message);
@@ -639,9 +710,12 @@ export const DataTab: React.FC = () => {
 
             {/* 2. NO PRO (TERKUNCI SAMPAI TIPE PRO DIPILIH) */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase mb-1 tracking-wider">
-                2. NOMOR PRO
-              </label>
+              <div className="flex items-center justify-between mb-1 tracking-wider">
+                <label className="block text-xs font-bold text-slate-700 uppercase">
+                  2. NOMOR PRO (HANYA ANGKA)
+                </label>
+                <span className="text-[10px] text-slate-400 font-semibold">Numerik Saja</span>
+              </div>
               <div className="relative flex items-center">
                 {kategoriPro ? (
                   <div className={`absolute left-2.5 z-10 px-2 py-0.5 rounded text-[11px] font-black uppercase tracking-wider ${
@@ -656,16 +730,29 @@ export const DataTab: React.FC = () => {
                   type="text"
                   required
                   disabled={!kategoriPro}
-                  placeholder={!kategoriPro ? '⚠️ Pilih tipe PRO (RM / PM) di atas terlebih dahulu...' : 'Contoh: 105999 atau PRO-2026-0001'}
+                  placeholder={!kategoriPro ? '⚠️ Pilih tipe PRO (RM / PM) di atas terlebih dahulu...' : 'Contoh: 105999'}
                   value={noPro}
-                  onChange={(e) => setNoPro(e.target.value)}
+                  onChange={(e) => setNoPro(e.target.value.replace(/\D/g, ''))}
                   className={`w-full h-11 pr-3.5 text-sm border rounded-xl focus:outline-none transition font-mono ${
-                    kategoriPro 
-                      ? 'pl-16 border-slate-300 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white placeholder:font-sans placeholder:text-slate-400' 
-                      : 'pl-3.5 bg-slate-100/80 border-slate-200 text-slate-400 cursor-not-allowed text-xs'
-                  }`}
+                    duplicateWarning?.type === 'duplicate'
+                      ? 'border-rose-400 bg-rose-50/30 text-rose-900 focus:ring-2 focus:ring-rose-500/20'
+                      : kategoriPro 
+                        ? 'border-slate-300 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white placeholder:font-sans placeholder:text-slate-400' 
+                        : 'bg-slate-100/80 border-slate-200 text-slate-400 cursor-not-allowed text-xs'
+                  } ${kategoriPro ? 'pl-16' : 'pl-3.5'}`}
                 />
               </div>
+
+              {duplicateWarning && (
+                <div className={`mt-1.5 flex items-start space-x-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border ${
+                  duplicateWarning.type === 'duplicate'
+                    ? 'bg-rose-50 text-rose-700 border-rose-200'
+                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                }`}>
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{duplicateWarning.message}</span>
+                </div>
+              )}
             </div>
 
             {/* 3. TANGGAL */}
@@ -720,11 +807,17 @@ export const DataTab: React.FC = () => {
             <div className="flex items-center space-x-2 pt-2 border-t border-slate-100">
               <button
                 type="submit"
-                disabled={submitting || !kategoriPro || !noPro.trim() || !passBox.trim()}
+                disabled={submitting || !kategoriPro || !noPro.trim() || !passBox.trim() || Boolean(duplicateWarning?.type === 'duplicate')}
                 className="flex-1 h-11 flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-semibold rounded-xl shadow-sm transition disabled:opacity-50 text-sm"
               >
                 <Save className="w-4 h-4" />
-                <span>{submitting ? 'Menyimpan...' : 'Simpan Data'}</span>
+                <span>
+                  {submitting 
+                    ? 'Menyimpan...' 
+                    : duplicateWarning?.type === 'duplicate' 
+                      ? 'No PRO Sudah Ada' 
+                      : 'Simpan Data'}
+                </span>
               </button>
 
               <button
@@ -986,6 +1079,7 @@ export const DataTab: React.FC = () => {
           log={editingLog}
           isOpen={!!editingLog}
           availablePassBoxes={availablePassBoxes}
+          existingLogs={logs}
           onClose={() => setEditingLog(null)}
           onSave={handleSaveEdit}
         />
