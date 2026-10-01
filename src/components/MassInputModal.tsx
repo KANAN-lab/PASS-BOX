@@ -15,7 +15,8 @@ import {
   ClipboardPaste,
   Check,
   HelpCircle,
-  AlertTriangle
+  AlertTriangle,
+  Search
 } from 'lucide-react';
 
 interface ParsedProItem {
@@ -61,6 +62,7 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
   // Raw Text input & parsed items
   const [rawText, setRawText] = useState('');
   const [items, setItems] = useState<ParsedProItem[]>([]);
+  const [tableSearch, setTableSearch] = useState('');
   const [checkingDb, setCheckingDb] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -72,6 +74,7 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
       setTanggal(todayStr);
       setRawText('');
       setItems([]);
+      setTableSearch('');
     }
   }, [isOpen, todayStr]);
 
@@ -226,6 +229,16 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
   const handleClearAll = () => {
     setRawText('');
     setItems([]);
+    setTableSearch('');
+  };
+
+  // Hapus semua baris duplikat (baik yang di DB maupun kembar di batch)
+  const handleRemoveAllDuplicates = () => {
+    const initialLen = items.length;
+    const cleaned = items.filter(i => !i.isDuplicateInDb && !i.isDuplicateInBatch);
+    const removedCount = initialLen - cleaned.length;
+    setItems(cleaned);
+    showToast(`${removedCount} nomor PRO duplikat berhasil disingkirkan`, 'info');
   };
 
   // Hitung metrik validasi
@@ -251,6 +264,17 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
       Boolean(i.pass_box)
     );
   }, [items]);
+
+  // Daftar item yang difilter untuk tampilan tabel
+  const displayedItems = useMemo(() => {
+    if (!tableSearch.trim()) return items;
+    const q = tableSearch.toLowerCase().trim();
+    return items.filter(i => 
+      i.no_pro.includes(q) || 
+      i.pass_box.toLowerCase().includes(q) || 
+      i.kategori_pro.toLowerCase().includes(q)
+    );
+  }, [items, tableSearch]);
 
   // Submit Mass Data ke Supabase
   const handleSaveMassData = async () => {
@@ -538,6 +562,49 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                 )}
               </div>
 
+              {/* Toolbar Aksi Cepat & Pencarian Baris */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center space-x-2">
+                  {(duplicateDbCount > 0 || duplicateBatchCount > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAllDuplicates}
+                      className="text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1.5 rounded-lg transition flex items-center space-x-1.5 shadow-2xs cursor-pointer"
+                      title="Singkirkan semua baris yang terdeteksi duplikat sekaligus"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>Hapus Semua Duplikat ({duplicateDbCount + duplicateBatchCount})</span>
+                    </button>
+                  )}
+                  {tableSearch && (
+                    <span className="text-xs text-slate-500 font-medium">
+                      Menampilkan {displayedItems.length} dari {items.length} item
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center space-x-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs shadow-2xs">
+                  <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <input
+                    type="text"
+                    placeholder="Cari No PRO di list..."
+                    value={tableSearch}
+                    onChange={(e) => setTableSearch(e.target.value)}
+                    className="outline-none text-xs w-32 sm:w-44 bg-transparent font-mono"
+                  />
+                  {tableSearch && (
+                    <button 
+                      type="button" 
+                      onClick={() => setTableSearch('')} 
+                      className="text-slate-400 hover:text-slate-600 ml-1"
+                      title="Hapus pencarian"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* Table Preview Selektif */}
               <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs max-h-60 overflow-y-auto">
                 <table className="w-full text-left text-xs">
@@ -552,110 +619,118 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {items.map((item, idx) => {
-                      const isDup = item.isDuplicateInDb || item.isDuplicateInBatch;
-                      const isIncomplete = !item.kategori_pro || !item.pass_box;
+                    {displayedItems.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-6 text-center text-slate-400 font-medium">
+                          {tableSearch ? `Tidak ada nomor PRO yang cocok dengan pencarian "${tableSearch}"` : 'Tidak ada data'}
+                        </td>
+                      </tr>
+                    ) : (
+                      displayedItems.map((item, idx) => {
+                        const isDup = item.isDuplicateInDb || item.isDuplicateInBatch;
+                        const isIncomplete = !item.kategori_pro || !item.pass_box;
 
-                      return (
-                        <tr 
-                          key={item.id}
-                          className={`hover:bg-slate-50/80 transition ${
-                            isDup ? 'bg-rose-50/40' : isIncomplete ? 'bg-amber-50/20' : ''
-                          }`}
-                        >
-                          <td className="py-2 px-3 text-center text-slate-400 font-mono text-[11px]">
-                            {idx + 1}
-                          </td>
-                          <td className="py-2 px-3 font-mono font-bold text-slate-900">
-                            {item.no_pro}
-                          </td>
-                          {/* Pilihan Selektif Kategori PRO per Baris */}
-                          <td className="py-2 px-3">
-                            <div className="flex items-center space-x-1">
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateItemKategori(item.id, 'RM')}
-                                className={`px-2 py-0.5 rounded text-[10px] font-extrabold border transition ${
-                                  item.kategori_pro === 'RM'
-                                    ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
-                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                        return (
+                          <tr 
+                            key={item.id}
+                            className={`hover:bg-slate-50/80 transition ${
+                              isDup ? 'bg-rose-50/40' : isIncomplete ? 'bg-amber-50/20' : ''
+                            }`}
+                          >
+                            <td className="py-2 px-3 text-center text-slate-400 font-mono text-[11px]">
+                              {idx + 1}
+                            </td>
+                            <td className="py-2 px-3 font-mono font-bold text-slate-900">
+                              {item.no_pro}
+                            </td>
+                            {/* Pilihan Selektif Kategori PRO per Baris */}
+                            <td className="py-2 px-3">
+                              <div className="flex items-center space-x-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateItemKategori(item.id, 'RM')}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-extrabold border transition cursor-pointer ${
+                                    item.kategori_pro === 'RM'
+                                      ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  RM
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateItemKategori(item.id, 'PM')}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-extrabold border transition cursor-pointer ${
+                                    item.kategori_pro === 'PM'
+                                      ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  PM
+                                </button>
+                                {!item.kategori_pro && (
+                                  <span className="text-[10px] text-rose-600 font-bold ml-1">
+                                    (Pilih)
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            {/* Pilihan Selektif Pass Box per Baris */}
+                            <td className="py-2 px-3">
+                              <select
+                                value={item.pass_box}
+                                onChange={(e) => handleUpdateItemPassBox(item.id, e.target.value)}
+                                className={`h-6 text-[11px] font-semibold border rounded px-1.5 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 ${
+                                  !item.pass_box ? 'border-amber-400 bg-amber-50/50 text-amber-800' : 'border-slate-300'
                                 }`}
                               >
-                                RM
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleUpdateItemKategori(item.id, 'PM')}
-                                className={`px-2 py-0.5 rounded text-[10px] font-extrabold border transition ${
-                                  item.kategori_pro === 'PM'
-                                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
-                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                                }`}
-                              >
-                                PM
-                              </button>
-                              {!item.kategori_pro && (
-                                <span className="text-[10px] text-rose-600 font-bold ml-1">
-                                  (Pilih)
+                                <option value="">-- Pilih Pass Box --</option>
+                                {availablePassBoxes.map(pb => (
+                                  <option key={pb.id} value={pb.name}>
+                                    {pb.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </td>
+                            {/* Status Validasi */}
+                            <td className="py-2 px-3">
+                              {item.isDuplicateInDb ? (
+                                <span 
+                                  className="inline-flex items-center text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded"
+                                  title={`Pernah diinput pada: ${item.duplicateInfo?.tanggal || ''} (${item.duplicateInfo?.pass_box || ''}) oleh ${item.duplicateInfo?.user_name || ''}`}
+                                >
+                                  Duplikat di DB ({item.duplicateInfo?.tanggal || 'Tercatat'})
+                                </span>
+                              ) : item.isDuplicateInBatch ? (
+                                <span className="inline-flex items-center text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                                  Kembar di List
+                                </span>
+                              ) : !item.kategori_pro || !item.pass_box ? (
+                                <span className="inline-flex items-center text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                                  Belum Lengkap ({!item.kategori_pro && !item.pass_box ? 'Tipe & Pass Box' : !item.kategori_pro ? 'Tipe PRO' : 'Pass Box'})
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                                  <Check className="w-3 h-3 mr-0.5" />
+                                  Valid & Siap
                                 </span>
                               )}
-                            </div>
-                          </td>
-                          {/* Pilihan Selektif Pass Box per Baris */}
-                          <td className="py-2 px-3">
-                            <select
-                              value={item.pass_box}
-                              onChange={(e) => handleUpdateItemPassBox(item.id, e.target.value)}
-                              className={`h-6 text-[11px] font-semibold border rounded px-1.5 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 ${
-                                !item.pass_box ? 'border-amber-400 bg-amber-50/50 text-amber-800' : 'border-slate-300'
-                              }`}
-                            >
-                              <option value="">-- Pilih Pass Box --</option>
-                              {availablePassBoxes.map(pb => (
-                                <option key={pb.id} value={pb.name}>
-                                  {pb.name}
-                                </option>
-                              ))}
-                            </select>
-                          </td>
-                          {/* Status Validasi */}
-                          <td className="py-2 px-3">
-                            {item.isDuplicateInDb ? (
-                              <span 
-                                className="inline-flex items-center text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded"
-                                title={`Pernah diinput pada: ${item.duplicateInfo?.tanggal || ''} (${item.duplicateInfo?.pass_box || ''}) oleh ${item.duplicateInfo?.user_name || ''}`}
+                            </td>
+                            {/* Tombol Hapus Baris */}
+                            <td className="py-2 px-2 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(item.id)}
+                                className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
+                                title="Hapus baris ini"
                               >
-                                Duplikat di DB ({item.duplicateInfo?.tanggal || 'Tercatat'})
-                              </span>
-                            ) : item.isDuplicateInBatch ? (
-                              <span className="inline-flex items-center text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                                Kembar di List
-                              </span>
-                            ) : !item.kategori_pro || !item.pass_box ? (
-                              <span className="inline-flex items-center text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
-                                Belum Lengkap ({!item.kategori_pro && !item.pass_box ? 'Tipe & Pass Box' : !item.kategori_pro ? 'Tipe PRO' : 'Pass Box'})
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
-                                <Check className="w-3 h-3 mr-0.5" />
-                                Valid & Siap
-                              </span>
-                            )}
-                          </td>
-                          {/* Tombol Hapus Baris */}
-                          <td className="py-2 px-2 text-center">
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItem(item.id)}
-                              className="p-1 text-slate-400 hover:text-rose-600 rounded transition"
-                              title="Hapus baris ini"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>

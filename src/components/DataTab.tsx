@@ -421,6 +421,12 @@ export const DataTab: React.FC = () => {
   // Metrics
   const totalCount = logs.length;
   const todayCount = logs.filter(l => l.tanggal === todayStr).length;
+  const todayRmCount = logs.filter(
+    l => l.tanggal === todayStr && (l.kategori_pro === 'RM' || (!l.kategori_pro && l.pass_box.toLowerCase().includes('rm')))
+  ).length;
+  const todayPmCount = logs.filter(
+    l => l.tanggal === todayStr && (l.kategori_pro === 'PM' || (!l.kategori_pro && l.pass_box.toLowerCase().includes('pm')))
+  ).length;
 
   // Filtered logs
   const filteredLogs = useMemo(() => {
@@ -662,20 +668,22 @@ export const DataTab: React.FC = () => {
       )}
 
       {/* Top Header Section: Title & Responsive Metric Cards */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-            Input Data Pass Box
+            Log Aktivitas Pass Box
           </h1>
           <p className="text-xs font-medium text-slate-500 mt-0.5">
-            Pilih Kategori PRO (RM / PM) · No Pro · Tanggal · Pilihan Pass Box
+            Pencatatan serah-terima material cleanroom · Validasi unik nomor PRO & audit trail real-time
           </p>
         </div>
 
-        {/* Metric Cards: 2 Columns on Mobile, Flex on Desktop */}
-        <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
-          <StatCard label="TOTAL DATA" value={totalCount} accentColor="bg-slate-800" className="sm:min-w-[130px]" />
-          <StatCard label="TANGGAL HARI INI" value={todayCount} accentColor="bg-sky-500" className="sm:min-w-[130px]" />
+        {/* Metric Cards: 2 Columns on Mobile, 4 Columns on Tablet/Desktop */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
+          <StatCard label="TOTAL TRANSAKSI" value={totalCount} accentColor="bg-slate-800" className="min-w-[115px]" />
+          <StatCard label="HARI INI (SEMUA)" value={todayCount} accentColor="bg-sky-500" className="min-w-[115px]" />
+          <StatCard label="PRO RM HARI INI" value={todayRmCount} accentColor="bg-emerald-500" badge="RAW" className="min-w-[115px]" />
+          <StatCard label="PRO PM HARI INI" value={todayPmCount} accentColor="bg-indigo-500" badge="PACK" className="min-w-[115px]" />
         </div>
       </div>
 
@@ -795,6 +803,17 @@ export const DataTab: React.FC = () => {
                   <span>{duplicateWarning.message}</span>
                 </div>
               )}
+
+              <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
+                <span>Punya puluhan No PRO di Excel?</span>
+                <button
+                  type="button"
+                  onClick={() => setIsMassModalOpen(true)}
+                  className="font-bold text-sky-600 hover:text-sky-700 hover:underline cursor-pointer"
+                >
+                  Gunakan Mass Input &rarr;
+                </button>
+              </div>
             </div>
 
             {/* 3. TANGGAL */}
