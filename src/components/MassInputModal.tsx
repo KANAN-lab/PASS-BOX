@@ -14,13 +14,14 @@ import {
   RotateCcw,
   ClipboardPaste,
   Check,
-  HelpCircle
+  HelpCircle,
+  AlertTriangle
 } from 'lucide-react';
 
 interface ParsedProItem {
   id: string; // ID unik internal untuk baris tabel
   no_pro: string;
-  kategori_pro: KategoriPro;
+  kategori_pro: KategoriPro | '';
   pass_box: string;
   isDuplicateInDb: boolean;
   isDuplicateInBatch: boolean;
@@ -51,34 +52,31 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
 }) => {
   const { user } = useAuth();
 
-  // Pengaturan Seragam (Mass Defaults)
+  // Pengaturan Seragam (Mass Defaults) - WAJIB DIPILIH MANUAL, TIDAK OTOMATIS TERPILIH
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
-  const [defaultKategori, setDefaultKategori] = useState<KategoriPro>('RM');
-  const [defaultPassBox, setDefaultPassBox] = useState<string>('Pass Box 1');
+  const [defaultKategori, setDefaultKategori] = useState<KategoriPro | ''>('');
+  const [defaultPassBox, setDefaultPassBox] = useState<string>('');
   const [tanggal, setTanggal] = useState<string>(todayStr);
 
-  // Raw Text input
+  // Raw Text input & parsed items
   const [rawText, setRawText] = useState('');
   const [items, setItems] = useState<ParsedProItem[]>([]);
   const [checkingDb, setCheckingDb] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Inisialisasi default pass box dari master yang aktif jika ada
-  useEffect(() => {
-    if (availablePassBoxes.length > 0 && !availablePassBoxes.some(p => p.name === defaultPassBox)) {
-      setDefaultPassBox(availablePassBoxes[0].name);
-    }
-  }, [availablePassBoxes]);
-
-  // Reset saat modal dibuka
+  // Reset saat modal dibuka: Wajib mulai dalam keadaan KOSONG (tanpa auto-select)
   useEffect(() => {
     if (isOpen) {
+      setDefaultKategori('');
+      setDefaultPassBox('');
       setTanggal(todayStr);
+      setRawText('');
+      setItems([]);
     }
   }, [isOpen, todayStr]);
 
   // Fungsi Parser Teks Paste
-  const parseRawText = (text: string) => {
+  const parseRawText = (text: string, kat: KategoriPro | '', pb: string) => {
     if (!text.trim()) {
       setItems([]);
       return;
@@ -107,8 +105,8 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
       newItems.push({
         id: `item-${index}-${digitsOnly}-${Math.random()}`,
         no_pro: digitsOnly,
-        kategori_pro: defaultKategori,
-        pass_box: defaultPassBox,
+        kategori_pro: kat,
+        pass_box: pb,
         isDuplicateInDb: Boolean(localDup),
         isDuplicateInBatch: isDupBatch,
         duplicateInfo: localDup ? {
@@ -173,17 +171,40 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setRawText(val);
-    parseRawText(val);
+    parseRawText(val, defaultKategori, defaultPassBox);
   };
 
-  // Terapkan default seragam (Mass Action) ke seluruh baris
+  // Handler saat memilih Default Kategori di header
+  const handleSelectDefaultKategori = (kat: KategoriPro) => {
+    setDefaultKategori(kat);
+    // Jika sudah ada item yang belum punya kategori, isi otomatis dengan pilihan ini
+    if (items.length > 0) {
+      setItems(prev => prev.map(item => item.kategori_pro === '' ? { ...item, kategori_pro: kat } : item));
+    }
+  };
+
+  // Handler saat memilih Default Pass Box di header
+  const handleSelectDefaultPassBox = (pb: string) => {
+    setDefaultPassBox(pb);
+    // Jika sudah ada item yang belum punya pass box, isi otomatis dengan pilihan ini
+    if (pb && items.length > 0) {
+      setItems(prev => prev.map(item => item.pass_box === '' ? { ...item, pass_box: pb } : item));
+    }
+  };
+
+  // Terapkan default seragam (Mass Action) ke seluruh baris yang ada
   const handleApplyDefaultToAll = () => {
+    if (!defaultKategori && !defaultPassBox) {
+      showWarningAlert('Pilih Default Terlebih Dahulu', 'Pilih Tipe PRO Default dan/atau Pass Box Default di atas terlebih dahulu.');
+      return;
+    }
+
     setItems(prev => prev.map(item => ({
       ...item,
-      kategori_pro: defaultKategori,
-      pass_box: defaultPassBox,
+      kategori_pro: defaultKategori || item.kategori_pro,
+      pass_box: defaultPassBox || item.pass_box,
     })));
-    showToast('Kategori dan Pass Box default telah diterapkan ke seluruh baris.', 'info', 2000);
+    showToast('Nilai default berhasil diterapkan ke seluruh baris.', 'info', 2500);
   };
 
   // Ubah Kategori Selektif per baris
@@ -208,10 +229,6 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
   };
 
   // Hitung metrik validasi
-  const validItems = useMemo(() => {
-    return items.filter(i => !i.isDuplicateInDb && !i.isDuplicateInBatch);
-  }, [items]);
-
   const duplicateDbCount = useMemo(() => {
     return items.filter(i => i.isDuplicateInDb).length;
   }, [items]);
@@ -220,15 +237,43 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
     return items.filter(i => i.isDuplicateInBatch).length;
   }, [items]);
 
+  // Jumlah baris yang belum memilih Kategori atau Pass Box
+  const incompleteCount = useMemo(() => {
+    return items.filter(i => !i.isDuplicateInDb && !i.isDuplicateInBatch && (!i.kategori_pro || !i.pass_box)).length;
+  }, [items]);
+
+  // Item yang 100% valid dan lengkap
+  const validItems = useMemo(() => {
+    return items.filter(i => 
+      !i.isDuplicateInDb && 
+      !i.isDuplicateInBatch && 
+      Boolean(i.kategori_pro) && 
+      Boolean(i.pass_box)
+    );
+  }, [items]);
+
   // Submit Mass Data ke Supabase
   const handleSaveMassData = async () => {
+    if (items.length === 0) {
+      showWarningAlert('Data Belum Ada', 'Tempel daftar nomor PRO terlebih dahulu.');
+      return;
+    }
+
+    if (incompleteCount > 0) {
+      showWarningAlert(
+        'Pilihan Belum Lengkap',
+        `Terdapat <b>${incompleteCount} baris nomor PRO</b> yang belum ditentukan Tipe PRO (RM/PM) atau Pass Box-nya.<br/><br/>Harap lengkapi pilihan di masing-masing baris, atau gunakan tombol <b>"Terapkan Default ke Semua Baris"</b> di atas.`
+      );
+      return;
+    }
+
     if (validItems.length === 0) {
-      showWarningAlert('Data Belum Siap', 'Tidak ada data nomor PRO yang valid untuk disimpan.');
+      showWarningAlert('Data Tidak Valid', 'Tidak ada data nomor PRO yang valid untuk disimpan.');
       return;
     }
 
     const confirmText = duplicateDbCount > 0 || duplicateBatchCount > 0
-      ? `Dari total <b>${items.length}</b> baris, sebanyak <b>${validItems.length} data valid</b> akan disimpan.<br/><br/><span class="text-rose-600 font-semibold">${duplicateDbCount + duplicateBatchCount} data duplikat akan otomatis dilewati.</span><br/><br/>Lanjutkan proses simpan massal?`
+      ? `Dari total <b>${items.length}</b> baris, sebanyak <b>${validItems.length} data valid & lengkap</b> akan disimpan.<br/><br/><span class="text-rose-600 font-semibold">${duplicateDbCount + duplicateBatchCount} data duplikat akan otomatis dilewati.</span><br/><br/>Lanjutkan proses simpan massal?`
       : `Sistem akan menyimpan <b>${validItems.length} data log PRO</b> sekaligus ke database Supabase.<br/><br/>Lanjutkan?`;
 
     const confirmed = await showConfirmDialog(
@@ -242,7 +287,7 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
     setSubmitting(true);
     try {
       const recordsToInsert = validItems.map(item => ({
-        kategori_pro: item.kategori_pro,
+        kategori_pro: item.kategori_pro as KategoriPro,
         no_pro: item.no_pro,
         tanggal,
         pass_box: item.pass_box,
@@ -296,7 +341,7 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                 </span>
               </h3>
               <p className="text-xs text-slate-500">
-                Mendukung pengaturan seragam (massal) atau pilihan selektif per nomor PRO.
+                Pilih Tipe PRO dan Pass Box secara massal (seragam) atau selektif (per baris).
               </p>
             </div>
           </div>
@@ -319,7 +364,7 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                   1. PENGATURAN DEFAULT (MASSAL)
                 </span>
                 <span className="text-[11px] text-slate-500 font-normal">
-                  — Otomatis diterapkan saat paste teks
+                  — Tidak otomatis dipilih, wajib ditentukan manual
                 </span>
               </div>
               {items.length > 0 && (
@@ -336,15 +381,22 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Default Kategori PRO */}
+              {/* Default Kategori PRO (Tidak auto-pilih) */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                  Tipe PRO Default
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase">
+                    Tipe PRO Default
+                  </label>
+                  {!defaultKategori && (
+                    <span className="text-[10px] text-rose-700 font-extrabold bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded animate-pulse">
+                      Wajib Pilih
+                    </span>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setDefaultKategori('RM')}
+                    onClick={() => handleSelectDefaultKategori('RM')}
                     className={`py-1.5 px-2 rounded-lg text-xs font-extrabold transition border flex items-center justify-center space-x-1.5 ${
                       defaultKategori === 'RM'
                         ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
@@ -356,7 +408,7 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDefaultKategori('PM')}
+                    onClick={() => handleSelectDefaultKategori('PM')}
                     className={`py-1.5 px-2 rounded-lg text-xs font-extrabold transition border flex items-center justify-center space-x-1.5 ${
                       defaultKategori === 'PM'
                         ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
@@ -369,16 +421,26 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                 </div>
               </div>
 
-              {/* Default Pass Box */}
+              {/* Default Pass Box (Tidak auto-pilih) */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                  Pass Box Default
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase">
+                    Pass Box Default
+                  </label>
+                  {!defaultPassBox && (
+                    <span className="text-[10px] text-rose-700 font-extrabold bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded animate-pulse">
+                      Wajib Pilih
+                    </span>
+                  )}
+                </div>
                 <select
                   value={defaultPassBox}
-                  onChange={(e) => setDefaultPassBox(e.target.value)}
-                  className="w-full h-8 text-xs font-bold border border-slate-300 rounded-lg px-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
+                  onChange={(e) => handleSelectDefaultPassBox(e.target.value)}
+                  className={`w-full h-8 text-xs font-bold border rounded-lg px-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500/20 ${
+                    !defaultPassBox ? 'border-amber-300 bg-amber-50/20 text-amber-900' : 'border-slate-300'
+                  }`}
                 >
+                  <option value="">-- Wajib Pilih Pass Box --</option>
                   {availablePassBoxes.map(pb => (
                     <option key={pb.id} value={pb.name}>
                       {pb.name}
@@ -389,9 +451,11 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
 
               {/* Tanggal */}
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase mb-1">
-                  Tanggal Dokumen
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase">
+                    Tanggal Dokumen
+                  </label>
+                </div>
                 <input
                   type="date"
                   value={tanggal}
@@ -430,7 +494,7 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
             />
             <p className="text-[11px] text-slate-400 mt-1 flex items-center space-x-1">
               <HelpCircle className="w-3 h-3 shrink-0" />
-              <span>Cukup salin (Ctrl+C) satu kolom nomor PRO di Excel lalu tempel (Ctrl+V) ke kotak di atas.</span>
+              <span>Salin satu kolom nomor PRO di Excel lalu tempel (Ctrl+V) ke kotak di atas. Pengaturan bisa massal atau selektif di tabel bawah.</span>
             </p>
           </div>
 
@@ -447,6 +511,12 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Siap Simpan: <span className="font-mono">{validItems.length}</span></span>
                   </span>
+                  {incompleteCount > 0 && (
+                    <span className="font-bold text-amber-700 flex items-center space-x-1">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Belum Lengkap: <span className="font-mono">{incompleteCount}</span></span>
+                    </span>
+                  )}
                   {duplicateDbCount > 0 && (
                     <span className="font-bold text-rose-700 flex items-center space-x-1">
                       <AlertCircle className="w-3.5 h-3.5" />
@@ -483,13 +553,14 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
                     {items.map((item, idx) => {
-                      const isInvalid = item.isDuplicateInDb || item.isDuplicateInBatch;
+                      const isDup = item.isDuplicateInDb || item.isDuplicateInBatch;
+                      const isIncomplete = !item.kategori_pro || !item.pass_box;
 
                       return (
                         <tr 
                           key={item.id}
                           className={`hover:bg-slate-50/80 transition ${
-                            isInvalid ? 'bg-rose-50/40' : ''
+                            isDup ? 'bg-rose-50/40' : isIncomplete ? 'bg-amber-50/20' : ''
                           }`}
                         >
                           <td className="py-2 px-3 text-center text-slate-400 font-mono text-[11px]">
@@ -523,6 +594,11 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                               >
                                 PM
                               </button>
+                              {!item.kategori_pro && (
+                                <span className="text-[10px] text-rose-600 font-bold ml-1">
+                                  (Pilih)
+                                </span>
+                              )}
                             </div>
                           </td>
                           {/* Pilihan Selektif Pass Box per Baris */}
@@ -530,8 +606,11 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                             <select
                               value={item.pass_box}
                               onChange={(e) => handleUpdateItemPassBox(item.id, e.target.value)}
-                              className="h-6 text-[11px] font-semibold border border-slate-300 rounded px-1.5 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                              className={`h-6 text-[11px] font-semibold border rounded px-1.5 bg-white text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 ${
+                                !item.pass_box ? 'border-amber-400 bg-amber-50/50 text-amber-800' : 'border-slate-300'
+                              }`}
                             >
+                              <option value="">-- Pilih Pass Box --</option>
                               {availablePassBoxes.map(pb => (
                                 <option key={pb.id} value={pb.name}>
                                   {pb.name}
@@ -552,10 +631,14 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
                               <span className="inline-flex items-center text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
                                 Kembar di List
                               </span>
+                            ) : !item.kategori_pro || !item.pass_box ? (
+                              <span className="inline-flex items-center text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                                Belum Lengkap ({!item.kategori_pro && !item.pass_box ? 'Tipe & Pass Box' : !item.kategori_pro ? 'Tipe PRO' : 'Pass Box'})
+                              </span>
                             ) : (
                               <span className="inline-flex items-center text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
                                 <Check className="w-3 h-3 mr-0.5" />
-                                Valid
+                                Valid & Siap
                               </span>
                             )}
                           </td>
@@ -583,10 +666,17 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
         {/* Modal Footer */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-t border-slate-100 bg-slate-50/80 shrink-0">
           <div className="text-xs text-slate-500">
-            {validItems.length > 0 ? (
-              <span>Siap menyimpan <b>{validItems.length}</b> data log PRO baru.</span>
+            {incompleteCount > 0 ? (
+              <span className="text-amber-700 font-bold flex items-center space-x-1">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                <span>Ada <b>{incompleteCount}</b> baris belum lengkap (pilih Tipe PRO / Pass Box).</span>
+              </span>
+            ) : validItems.length > 0 ? (
+              <span className="text-emerald-700 font-semibold">
+                Siap menyimpan <b>{validItems.length}</b> data log PRO lengkap.
+              </span>
             ) : (
-              <span>Tempel nomor PRO untuk memulai.</span>
+              <span>Tempel nomor PRO dan tentukan Tipe & Pass Box untuk memulai.</span>
             )}
           </div>
 
@@ -601,11 +691,19 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
             <button
               type="button"
               onClick={handleSaveMassData}
-              disabled={submitting || validItems.length === 0}
-              className="flex items-center space-x-1.5 px-4 py-2 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 active:bg-sky-800 rounded-xl transition disabled:opacity-50 shadow-sm"
+              disabled={submitting || validItems.length === 0 || incompleteCount > 0}
+              className="flex items-center space-x-1.5 px-4 py-2 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 active:bg-sky-800 rounded-xl transition disabled:opacity-50 shadow-sm cursor-pointer disabled:cursor-not-allowed"
             >
               <Save className="w-4 h-4" />
-              <span>{submitting ? 'Menyimpan...' : `Simpan ${validItems.length > 0 ? `${validItems.length} Data PRO` : 'Semua Data'}`}</span>
+              <span>
+                {submitting 
+                  ? 'Menyimpan...' 
+                  : incompleteCount > 0 
+                    ? `Lengkapi Pilihan (${incompleteCount} Belum Lengkap)` 
+                    : validItems.length > 0 
+                      ? `Simpan ${validItems.length} Data PRO` 
+                      : 'Simpan Semua Data'}
+              </span>
             </button>
           </div>
         </div>
