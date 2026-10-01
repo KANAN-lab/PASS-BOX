@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { PassBoxLog, KategoriPro, PassBoxMaster } from '../types';
 import { X, Save, Box, AlertCircle } from 'lucide-react';
+import { showWarningAlert } from '../utils/swal';
 
 interface EditLogModalProps {
   log: PassBoxLog | null;
@@ -62,12 +63,12 @@ export const EditLogModal: React.FC<EditLogModalProps> = ({
     if (!cleanNoPro || !tanggal || !passBox.trim()) return;
 
     if (!/^\d+$/.test(cleanNoPro)) {
-      alert('PENTING: Nomor PRO harus berupa angka saja (numerik).');
+      showWarningAlert('Perhatian', 'Nomor PRO harus berupa angka saja (numerik).');
       return;
     }
 
     if (duplicateWarning) {
-      alert(duplicateWarning);
+      showWarningAlert('Perhatian', duplicateWarning);
       return;
     }
 

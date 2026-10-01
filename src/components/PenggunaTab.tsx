@@ -33,6 +33,7 @@ import {
   executeRestoreLogs, 
   type RestorePreview 
 } from '../utils/backup';
+import { showToast, showWarningAlert, showErrorAlert, showConfirmDialog } from '../utils/swal';
 
 export const PenggunaTab: React.FC = () => {
   const { user: currentUser, isAdmin, isSpv, canManageMasterData } = useAuth();
@@ -87,9 +88,10 @@ export const PenggunaTab: React.FC = () => {
       const res = await downloadJSONBackup(currentUser?.full_name);
       if (res.success) {
         setSuccessMsg(`File backup JSON (${res.count} baris log) berhasil diunduh.`);
+        showToast('Backup JSON berhasil diunduh!', 'success');
         setTimeout(() => setSuccessMsg(''), 4000);
       } else {
-        alert('Gagal mengunduh backup: ' + res.error);
+        showErrorAlert('Gagal Mengunduh Backup', res.error || 'Terjadi kesalahan sistem');
       }
     } finally {
       setDownloadingJson(false);
@@ -102,9 +104,10 @@ export const PenggunaTab: React.FC = () => {
       const res = await downloadExcelBackup();
       if (res.success) {
         setSuccessMsg(`File backup Excel (${res.count} baris log) berhasil diunduh.`);
+        showToast('Backup Excel berhasil diunduh!', 'success');
         setTimeout(() => setSuccessMsg(''), 4000);
       } else {
-        alert('Gagal mengunduh backup Excel: ' + res.error);
+        showErrorAlert('Gagal Mengunduh Backup Excel', res.error || 'Terjadi kesalahan sistem');
       }
     } finally {
       setDownloadingExcel(false);
@@ -124,8 +127,13 @@ export const PenggunaTab: React.FC = () => {
   const handleExecuteRestore = async () => {
     if (!restorePreview || !restorePreview.isValid) return;
 
-    const confirmMsg = `Konfirmasi Pemulihan:\n\nSistem akan memasukkan ${restorePreview.logsCount} data transaksi ke database Supabase.\nLanjutkan proses pemulihan?`;
-    if (!window.confirm(confirmMsg)) return;
+    const confirmed = await showConfirmDialog(
+      'Konfirmasi Pemulihan Data',
+      `Sistem akan memasukkan <b>${restorePreview.logsCount} data transaksi</b> ke database Supabase.<br/><br/>Lanjutkan proses pemulihan?`,
+      'Ya, Pulihkan Data',
+      true
+    );
+    if (!confirmed) return;
 
     setRestoreLoading(true);
     setRestoreProgress(5);
@@ -218,17 +226,21 @@ export const PenggunaTab: React.FC = () => {
   // 1. Ubah Role Pengguna Menggunakan Secure Database RPC
   const handleChangeRole = async (targetUserId: string, targetName: string, newRole: UserRole) => {
     if (!isAdmin) {
-      alert('Akses ditolak: Hanya Administrator yang berhak mengubah role akun pengguna.');
+      showWarningAlert('Akses Ditolak', 'Hanya Administrator yang berhak mengubah role akun pengguna.');
       return;
     }
 
     if (targetUserId === currentUser?.id) {
-      alert('Anda tidak dapat mengubah role akun Anda sendiri.');
+      showWarningAlert('Perhatian', 'Anda tidak dapat mengubah role akun Anda sendiri.');
       return;
     }
 
-    const confirmMsg = `Ubah role "${targetName}" menjadi ${newRole.toUpperCase()}?`;
-    if (!window.confirm(confirmMsg)) return;
+    const confirmed = await showConfirmDialog(
+      'Ubah Role Pengguna',
+      `Apakah Anda yakin ingin mengubah role akun <b>"${targetName}"</b> menjadi <b>${newRole.toUpperCase()}</b>?`,
+      'Ya, Ubah Role'
+    );
+    if (!confirmed) return;
 
     setUpdatingId(targetUserId);
     try {
@@ -248,10 +260,11 @@ export const PenggunaTab: React.FC = () => {
       }
 
       setUsers(users.map(u => u.id === targetUserId ? { ...u, role: newRole } : u));
+      showToast(`Role ${targetName} diubah ke ${newRole.toUpperCase()}`, 'success');
       setSuccessMsg(`Role ${targetName} berhasil diubah menjadi ${newRole.toUpperCase()}.`);
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err: any) {
-      alert('Gagal mengubah role: ' + (err.message || 'Izin ditolak'));
+      showErrorAlert('Gagal Mengubah Role', err.message || 'Izin ditolak');
     } finally {
       setUpdatingId(null);
     }
@@ -260,18 +273,24 @@ export const PenggunaTab: React.FC = () => {
   // 2. Toggle Status Aktif/Nonaktif User
   const handleToggleStatus = async (targetUserId: string, currentStatus: boolean, targetName: string) => {
     if (!isAdmin) {
-      alert('Akses ditolak: Hanya Administrator yang berhak mengubah status akun pengguna.');
+      showWarningAlert('Akses Ditolak', 'Hanya Administrator yang berhak mengubah status akun pengguna.');
       return;
     }
 
     if (targetUserId === currentUser?.id) {
-      alert('Anda tidak dapat menonaktifkan akun Anda sendiri.');
+      showWarningAlert('Perhatian', 'Anda tidak dapat menonaktifkan akun Anda sendiri.');
       return;
     }
 
     const newStatus = !currentStatus;
     const actionText = newStatus ? 'mengaktifkan' : 'menonaktifkan';
-    if (!window.confirm(`Apakah Anda yakin ingin ${actionText} akun "${targetName}"?`)) return;
+    const confirmed = await showConfirmDialog(
+      'Konfirmasi Status Akun',
+      `Apakah Anda yakin ingin <b>${actionText}</b> akun <b>"${targetName}"</b>?`,
+      newStatus ? 'Ya, Aktifkan' : 'Ya, Nonaktifkan',
+      !newStatus
+    );
+    if (!confirmed) return;
 
     setUpdatingId(targetUserId);
     try {
@@ -283,10 +302,11 @@ export const PenggunaTab: React.FC = () => {
       if (error) throw error;
 
       setUsers(users.map(u => u.id === targetUserId ? { ...u, is_active: newStatus } : u));
+      showToast(`Akun ${targetName} berhasil ${actionText}`, 'info');
       setSuccessMsg(`Status akun ${targetName} berhasil diperbarui.`);
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err: any) {
-      alert('Gagal mengubah status: ' + (err.message || 'Izin ditolak'));
+      showErrorAlert('Gagal Mengubah Status', err.message || 'Izin ditolak');
     } finally {
       setUpdatingId(null);
     }
@@ -295,7 +315,7 @@ export const PenggunaTab: React.FC = () => {
   // 3. Admin Reset Password Pengguna Lain
   const handleOpenResetModal = (user: UserProfile) => {
     if (!isAdmin) {
-      alert('Akses ditolak: Hanya Administrator yang berhak mereset password pengguna.');
+      showWarningAlert('Akses Ditolak', 'Hanya Administrator yang berhak mereset password pengguna.');
       return;
     }
 
@@ -453,7 +473,7 @@ export const PenggunaTab: React.FC = () => {
   const handleAddPassBox = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canManageMasterData) {
-      alert('Akses ditolak: Akun SPV tidak memiliki wewenang mengubah Master Data Pass Box.');
+      showWarningAlert('Akses Ditolak', 'Akun SPV tidak memiliki wewenang mengubah Master Data Pass Box.');
       return;
     }
 
@@ -461,7 +481,7 @@ export const PenggunaTab: React.FC = () => {
 
     const trimmed = newPassBoxName.trim();
     if (passBoxes.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
-      alert('Nama Pass Box ini sudah terdaftar.');
+      showWarningAlert('Perhatian', 'Nama Pass Box ini sudah terdaftar.');
       return;
     }
 
@@ -487,10 +507,11 @@ export const PenggunaTab: React.FC = () => {
       setPassBoxes(updated);
       localStorage.setItem('local_pass_boxes', JSON.stringify(updated));
       setNewPassBoxName('');
+      showToast(`Master "${trimmed}" berhasil ditambahkan!`, 'success');
       setSuccessMsg(`Master "${trimmed}" berhasil ditambahkan.`);
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (err: any) {
-      alert('Gagal menambah Pass Box: ' + err.message);
+      showErrorAlert('Gagal Menambah Pass Box', err.message || 'Terjadi kesalahan sistem');
     } finally {
       setSavingPassBox(false);
     }
@@ -498,7 +519,7 @@ export const PenggunaTab: React.FC = () => {
 
   const handleTogglePassBoxStatus = async (pb: PassBoxMaster) => {
     if (!canManageMasterData) {
-      alert('Akses ditolak: Akun SPV tidak memiliki wewenang mengubah Master Data Pass Box.');
+      showWarningAlert('Akses Ditolak', 'Akun SPV tidak memiliki wewenang mengubah Master Data Pass Box.');
       return;
     }
 
@@ -512,25 +533,32 @@ export const PenggunaTab: React.FC = () => {
       const updated = passBoxes.map(p => p.id === pb.id ? { ...p, is_active: updatedStatus } : p);
       setPassBoxes(updated);
       localStorage.setItem('local_pass_boxes', JSON.stringify(updated));
+      showToast(`"${pb.name}" ${updatedStatus ? 'diaktifkan' : 'dinonaktifkan'}`, 'info');
       setSuccessMsg(`Status "${pb.name}" diubah menjadi ${updatedStatus ? 'Aktif' : 'Nonaktif'}.`);
       setTimeout(() => setSuccessMsg(''), 3000);
     } catch (err: any) {
-      alert('Gagal update Pass Box: ' + err.message);
+      showErrorAlert('Gagal Update Pass Box', err.message || 'Terjadi kesalahan sistem');
     }
   };
 
   const handleDeletePassBox = async (pb: PassBoxMaster) => {
     if (!canManageMasterData) {
-      alert('Akses ditolak: Akun SPV tidak memiliki wewenang menghapus Master Data Pass Box.');
+      showWarningAlert('Akses Ditolak', 'Akun SPV tidak memiliki wewenang menghapus Master Data Pass Box.');
       return;
     }
 
     if (pb.name === 'Pass Box 1' || pb.name === 'Pass Box 2') {
-      alert('Pass Box default sistem tidak dapat dihapus. Anda dapat menonaktifkannya jika tidak digunakan.');
+      showWarningAlert('Perhatian', 'Pass Box default sistem tidak dapat dihapus. Anda dapat menonaktifkannya jika tidak digunakan.');
       return;
     }
 
-    if (!window.confirm(`Hapus "${pb.name}" dari master pilihan?`)) return;
+    const confirmed = await showConfirmDialog(
+      'Hapus Pilihan Pass Box',
+      `Apakah Anda yakin ingin menghapus <b>"${pb.name}"</b> dari master pilihan?`,
+      'Ya, Hapus',
+      true
+    );
+    if (!confirmed) return;
 
     try {
       await supabase
@@ -541,10 +569,11 @@ export const PenggunaTab: React.FC = () => {
       const updated = passBoxes.filter(p => p.id !== pb.id);
       setPassBoxes(updated);
       localStorage.setItem('local_pass_boxes', JSON.stringify(updated));
+      showToast(`"${pb.name}" berhasil dihapus`, 'info');
       setSuccessMsg(`"${pb.name}" berhasil dihapus.`);
       setTimeout(() => setSuccessMsg(''), 3000);
     } catch (err: any) {
-      alert('Gagal menghapus: ' + err.message);
+      showErrorAlert('Gagal Menghapus', err.message || 'Terjadi kesalahan sistem');
     }
   };
 

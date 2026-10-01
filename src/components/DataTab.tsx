@@ -8,6 +8,7 @@ import { StatCard } from './StatCard';
 import { EditLogModal } from './EditLogModal';
 import { exportLogsToExcel, formatDateIndo } from '../utils/excel';
 import { downloadJSONBackup } from '../utils/backup';
+import { showToast, showWarningAlert, showErrorAlert, showConfirmDialog } from '../utils/swal';
 import { 
   FileSpreadsheet, 
   FileJson,
@@ -211,20 +212,20 @@ export const DataTab: React.FC = () => {
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!kategoriPro) {
-      alert('PENTING: Wajib memilih tipe PRO (RM atau PM) terlebih dahulu.');
+      showWarningAlert('Perhatian', 'Wajib memilih tipe PRO (RM atau PM) terlebih dahulu.');
       return;
     }
     const cleanNoPro = noPro.trim();
     if (!cleanNoPro) {
-      alert('PENTING: Wajib mengisi No PRO terlebih dahulu.');
+      showWarningAlert('Perhatian', 'Wajib mengisi No PRO terlebih dahulu.');
       return;
     }
     if (!/^\d+$/.test(cleanNoPro)) {
-      alert('PENTING: Nomor PRO harus berupa angka saja (numerik).');
+      showWarningAlert('Perhatian', 'Nomor PRO harus berupa angka saja (numerik).');
       return;
     }
     if (!passBox.trim()) {
-      alert('PENTING: Wajib memilih salah satu Pass Box terlebih dahulu.');
+      showWarningAlert('Perhatian', 'Wajib memilih salah satu Pass Box terlebih dahulu.');
       return;
     }
     if (!tanggal) return;
@@ -232,7 +233,10 @@ export const DataTab: React.FC = () => {
     // 1. Cek duplikasi di state lokal terlebih dahulu
     const localMatch = logs.find(l => String(l.no_pro).trim() === cleanNoPro);
     if (localMatch) {
-      alert(`PENTING: Nomor PRO ${cleanNoPro} SUDAH PERNAH DIINPUT!\n\nDetail Catatan:\n- Tanggal: ${formatDateIndo(localMatch.tanggal)}\n- Pilihan Pass Box: ${localMatch.pass_box}\n- Operator: ${localMatch.user_name || 'Tidak tercatat'}\n\nSatu nomor PRO tidak boleh diinput lebih dari satu kali.`);
+      showWarningAlert(
+        'Nomor PRO Sudah Pernah Terinput',
+        `Nomor PRO <b>${cleanNoPro}</b> sudah pernah dicatat sebelumnya:<br/><br/><b>Tanggal:</b> ${formatDateIndo(localMatch.tanggal)}<br/><b>Pilihan Pass Box:</b> ${localMatch.pass_box}<br/><b>Operator:</b> ${localMatch.user_name || 'Tidak tercatat'}<br/><br/>Satu nomor PRO tidak boleh diinput lebih dari satu kali.`
+      );
       return;
     }
 
@@ -248,7 +252,10 @@ export const DataTab: React.FC = () => {
 
       if (!checkError && dbMatch && dbMatch.length > 0) {
         const dup = dbMatch[0];
-        alert(`PENTING: Nomor PRO ${cleanNoPro} SUDAH PERNAH DIINPUT DI DATABASE!\n\nDetail Catatan:\n- Tanggal: ${formatDateIndo(dup.tanggal)}\n- Pilihan Pass Box: ${dup.pass_box}\n- Operator: ${dup.user_name || 'Tidak tercatat'}\n\nSatu nomor PRO tidak boleh diinput lebih dari satu kali.`);
+        showWarningAlert(
+          'Nomor PRO Sudah Pernah Terinput',
+          `Nomor PRO <b>${cleanNoPro}</b> sudah pernah dicatat di database:<br/><br/><b>Tanggal:</b> ${formatDateIndo(dup.tanggal)}<br/><b>Pilihan Pass Box:</b> ${dup.pass_box}<br/><b>Operator:</b> ${dup.user_name || 'Tidak tercatat'}<br/><br/>Satu nomor PRO tidak boleh diinput lebih dari satu kali.`
+        );
         setSubmitting(false);
         return;
       }
@@ -282,12 +289,14 @@ export const DataTab: React.FC = () => {
         setLogs([data, ...logs]);
       }
 
+      showToast(`No PRO ${cleanNoPro} berhasil disimpan!`, 'success');
+
       // Reset form
       setNoPro('');
       setKategoriPro('');
       setPassBox('');
     } catch (err: any) {
-      alert('Error: ' + err.message);
+      showErrorAlert('Gagal Menyimpan Data', err.message || 'Terjadi kesalahan sistem');
     } finally {
       setSubmitting(false);
     }
@@ -304,20 +313,23 @@ export const DataTab: React.FC = () => {
   const handleSaveEdit = async (updatedLog: { id: number; kategori_pro: KategoriPro; no_pro: string; tanggal: string; pass_box: string }) => {
     const targetLog = logs.find(l => l.id === updatedLog.id);
     if (targetLog && !canUserModifyLog(targetLog)) {
-      alert('Akses ditolak: Anda hanya memiliki izin untuk mengubah data log yang Anda input sendiri.');
+      showWarningAlert('Akses Ditolak', 'Anda hanya memiliki izin untuk mengubah data log yang Anda input sendiri.');
       return;
     }
 
     const cleanNoPro = updatedLog.no_pro.trim();
     if (!/^\d+$/.test(cleanNoPro)) {
-      alert('PENTING: Nomor PRO harus berupa angka saja (numerik).');
+      showWarningAlert('Perhatian', 'Nomor PRO harus berupa angka saja (numerik).');
       return;
     }
 
     // Cek duplikasi di state lokal
     const localMatch = logs.find(l => l.id !== updatedLog.id && String(l.no_pro).trim() === cleanNoPro);
     if (localMatch) {
-      alert(`Nomor PRO ${cleanNoPro} sudah digunakan pada data lain (Tanggal: ${formatDateIndo(localMatch.tanggal)}, ${localMatch.pass_box}).`);
+      showWarningAlert(
+        'Nomor PRO Sudah Digunakan',
+        `Nomor PRO <b>${cleanNoPro}</b> sudah digunakan pada data lain (Tanggal: ${formatDateIndo(localMatch.tanggal)}, ${localMatch.pass_box}).`
+      );
       return;
     }
 
@@ -332,7 +344,10 @@ export const DataTab: React.FC = () => {
 
       if (!checkError && dbMatch && dbMatch.length > 0) {
         const dup = dbMatch[0];
-        alert(`Nomor PRO ${cleanNoPro} sudah digunakan pada data lain di database (Tanggal: ${formatDateIndo(dup.tanggal)}, Operator: ${dup.user_name}).`);
+        showWarningAlert(
+          'Nomor PRO Sudah Digunakan',
+          `Nomor PRO <b>${cleanNoPro}</b> sudah digunakan pada data lain di database (Tanggal: ${formatDateIndo(dup.tanggal)}, Operator: ${dup.user_name}).`
+        );
         return;
       }
 
@@ -354,8 +369,10 @@ export const DataTab: React.FC = () => {
       } else {
         setLogs(logs.map(l => l.id === updatedLog.id ? { ...l, ...updatedLog, no_pro: cleanNoPro } : l));
       }
+
+      showToast('Perubahan data log berhasil disimpan!', 'success');
     } catch (err: any) {
-      alert('Gagal mengupdate log: ' + err.message);
+      showErrorAlert('Gagal Mengupdate Data', err.message || 'Terjadi kesalahan sistem');
     }
   };
 
@@ -363,11 +380,18 @@ export const DataTab: React.FC = () => {
   const handleDelete = async (id: number) => {
     const targetLog = logs.find(l => l.id === id);
     if (targetLog && !canUserModifyLog(targetLog)) {
-      alert('Akses ditolak: Anda hanya memiliki izin untuk menghapus data log yang Anda input sendiri.');
+      showWarningAlert('Akses Ditolak', 'Anda hanya memiliki izin untuk menghapus data log yang Anda input sendiri.');
       return;
     }
 
-    if (!window.confirm('Apakah Anda yakin ingin menghapus data ini?')) return;
+    const confirmed = await showConfirmDialog(
+      'Konfirmasi Hapus Data',
+      `Apakah Anda yakin ingin menghapus data log <b>No PRO ${targetLog?.no_pro || ''}</b>?<br/>Tindakan ini tidak dapat dibatalkan.`,
+      'Ya, Hapus Data',
+      true
+    );
+
+    if (!confirmed) return;
 
     try {
       const { error } = await supabase
@@ -382,8 +406,10 @@ export const DataTab: React.FC = () => {
       } else {
         setLogs(logs.filter(l => l.id !== id));
       }
+
+      showToast('Data log berhasil dihapus', 'info');
     } catch (err: any) {
-      alert('Gagal menghapus log: ' + err.message);
+      showErrorAlert('Gagal Menghapus Data', err.message || 'Terjadi kesalahan sistem');
     }
   };
 
@@ -437,7 +463,7 @@ export const DataTab: React.FC = () => {
       if (!targetLog) return;
 
       if (!canUserModifyLog(targetLog)) {
-        alert('Akses ditolak: Anda hanya dapat mengubah atau menghapus data log yang Anda input sendiri.');
+        showWarningAlert('Akses Ditolak', 'Anda hanya dapat mengubah atau menghapus data log yang Anda input sendiri.');
         return;
       }
 
