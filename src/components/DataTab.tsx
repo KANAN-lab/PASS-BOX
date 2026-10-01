@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import type { PassBoxLog, KategoriPro, PassBoxMaster } from '../types';
 import { StatCard } from './StatCard';
 import { EditLogModal } from './EditLogModal';
+import { MassInputModal } from './MassInputModal';
 import { exportLogsToExcel, formatDateIndo } from '../utils/excel';
 import { downloadJSONBackup } from '../utils/backup';
 import { showToast, showWarningAlert, showErrorAlert, showConfirmDialog } from '../utils/swal';
@@ -23,7 +24,8 @@ import {
   User,
   X,
   CheckCircle2,
-  Tag
+  Tag,
+  Copy
 } from 'lucide-react';
 
 export const DataTab: React.FC = () => {
@@ -57,6 +59,9 @@ export const DataTab: React.FC = () => {
 
   // Edit modal
   const [editingLog, setEditingLog] = useState<PassBoxLog | null>(null);
+
+  // Mass input modal
+  const [isMassModalOpen, setIsMassModalOpen] = useState(false);
 
   // Deteksi duplikasi & validasi numerik real-time
   const duplicateWarning = useMemo(() => {
@@ -678,11 +683,22 @@ export const DataTab: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 items-start">
         {/* Left Column: Form Input Data */}
         <div className="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-4 sm:p-5 shadow-sm">
-          <div className="border-b border-slate-100 pb-3 mb-4">
-            <h2 className="text-sm sm:text-base font-bold text-slate-800">Form Pencatatan</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Wajib pilih tipe PRO terlebih dahulu sebelum mengisi No Pro.
-            </p>
+          <div className="border-b border-slate-100 pb-3 mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-slate-800">Form Pencatatan</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Pilih tipe PRO sebelum mengisi nomor PRO.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsMassModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 active:bg-sky-200 text-sky-700 border border-sky-200 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer"
+              title="Buka form input massal (Paste puluhan nomor PRO dari Excel)"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Mass Input</span>
+            </button>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -1108,6 +1124,19 @@ export const DataTab: React.FC = () => {
           existingLogs={logs}
           onClose={() => setEditingLog(null)}
           onSave={handleSaveEdit}
+        />
+      )}
+
+      {/* Mass Input Modal */}
+      {isMassModalOpen && (
+        <MassInputModal
+          isOpen={isMassModalOpen}
+          onClose={() => setIsMassModalOpen(false)}
+          availablePassBoxes={availablePassBoxes}
+          existingLogs={logs}
+          onSuccess={(newLogs) => {
+            setLogs([...newLogs, ...logs]);
+          }}
         />
       )}
     </div>
