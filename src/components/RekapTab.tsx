@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import type { PassBoxLog, CheckerSummary } from '../types';
 import { StatCard } from './StatCard';
-import { exportLogsToExcel, formatDateIndo, formatDateTimeIndo } from '../utils/excel';
+import { ExportModal } from './ExportModal';
+import { formatDateIndo, formatDateTimeIndo } from '../utils/excel';
 import { downloadJSONBackup } from '../utils/backup';
 import { 
   FileSpreadsheet, 
@@ -21,6 +22,7 @@ type PresetFilter = 'today' | '7days' | '30days' | 'all';
 export const RekapTab: React.FC = () => {
   const [logs, setLogs] = useState<PassBoxLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Preset filter state
   const [preset, setPreset] = useState<PresetFilter>('30days');
@@ -493,7 +495,7 @@ export const RekapTab: React.FC = () => {
           </button>
 
           <button
-            onClick={() => exportLogsToExcel(filteredLogs, 'Laporan_Eksekutif_Pass_Box')}
+            onClick={() => setIsExportModalOpen(true)}
             className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm transition"
           >
             <FileSpreadsheet className="w-4 h-4" />
@@ -908,6 +910,14 @@ export const RekapTab: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Export Shift Modal */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        logs={filteredLogs}
+        filenamePrefix="Laporan_Eksekutif_Pass_Box"
+      />
     </div>
   );
 };

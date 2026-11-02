@@ -7,7 +7,8 @@ import type { PassBoxLog, KategoriPro, PassBoxMaster } from '../types';
 import { StatCard } from './StatCard';
 import { EditLogModal } from './EditLogModal';
 import { MassInputModal } from './MassInputModal';
-import { exportLogsToExcel, formatDateIndo } from '../utils/excel';
+import { ExportModal } from './ExportModal';
+import { formatDateIndo } from '../utils/excel';
 import { downloadJSONBackup } from '../utils/backup';
 import { showToast, showWarningAlert, showErrorAlert, showConfirmDialog } from '../utils/swal';
 import { 
@@ -62,6 +63,9 @@ export const DataTab: React.FC = () => {
 
   // Mass input modal
   const [isMassModalOpen, setIsMassModalOpen] = useState(false);
+
+  // Export shift modal
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Deteksi duplikasi & validasi numerik real-time
   const duplicateWarning = useMemo(() => {
@@ -914,7 +918,7 @@ export const DataTab: React.FC = () => {
               </button>
 
               <button
-                onClick={() => exportLogsToExcel(filteredLogs)}
+                onClick={() => setIsExportModalOpen(true)}
                 className="flex items-center space-x-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-xs"
               >
                 <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
@@ -1158,6 +1162,14 @@ export const DataTab: React.FC = () => {
           }}
         />
       )}
+
+      {/* Export Shift Modal */}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        logs={filteredLogs}
+        filenamePrefix="Laporan_Pass_Box_Diamond"
+      />
     </div>
   );
 };
