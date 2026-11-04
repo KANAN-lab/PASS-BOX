@@ -67,6 +67,57 @@ export const DataTab: React.FC = () => {
   // Export shift modal
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
+  // Batas rentang data server: '30days' (default cepat) vs 'all' (arsip lengkap)
+  const [dataRangeMode, setDataRangeMode] = useState<'30days' | 'all'>('30days');
+
+  // Background server duplicate state
+  const [serverDuplicate, setServerDuplicate] = useState<{
+    no_pro: string;
+    tanggal: string;
+    pass_box: string;
+    user_name?: string;
+  } | null>(null);
+
+  // Debounce 300ms untuk cek duplikasi langsung ke index database Supabase
+  useEffect(() => {
+    const clean = noPro.trim();
+    if (!clean || !/^\d+$/.test(clean)) {
+      setServerDuplicate(null);
+      return;
+    }
+
+    // Jika sudah ada di memori lokal logs, tidak perlu query jaringan
+    const localFound = logs.find((l) => String(l.no_pro).trim() === clean);
+    if (localFound) {
+      setServerDuplicate(null);
+      return;
+    }
+
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('pass_box_logs')
+          .select('no_pro, tanggal, pass_box, user_name')
+          .eq('no_pro', clean)
+          .limit(1);
+
+        if (!error && data && data.length > 0 && isMounted) {
+          setServerDuplicate(data[0]);
+        } else if (isMounted) {
+          setServerDuplicate(null);
+        }
+      } catch {
+        // Abaikan kegagalan jaringan pada background check
+      }
+    }, 300);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [noPro, logs]);
+
   // Deteksi duplikasi & validasi numerik real-time
   const duplicateWarning = useMemo(() => {
     const clean = noPro.trim();
@@ -81,8 +132,14 @@ export const DataTab: React.FC = () => {
         message: `Nomor PRO ${clean} sudah pernah diinput pada ${formatDateIndo(found.tanggal)} (${found.pass_box}) oleh ${found.user_name || 'Checker'}.`,
       };
     }
+    if (serverDuplicate && String(serverDuplicate.no_pro).trim() === clean) {
+      return {
+        type: 'duplicate' as const,
+        message: `Nomor PRO ${clean} sudah pernah diinput pada ${formatDateIndo(serverDuplicate.tanggal)} (${serverDuplicate.pass_box}) oleh ${serverDuplicate.user_name || 'Checker'} (Riwayat Database).`,
+      };
+    }
     return null;
-  }, [noPro, logs]);
+  }, [noPro, logs, serverDuplicate]);
 
   const noProInputRef = useRef<HTMLInputElement>(null);
   const dtContainerRef = useRef<HTMLDivElement | null>(null);
@@ -156,14 +213,22 @@ export const DataTab: React.FC = () => {
     }
   };
 
-  // Load initial logs
-  const fetchLogs = async () => {
+  // Load logs dengan batas default 30 hari (Optimasi Skalabilitas Server)
+  const fetchLogs = async (mode: '30days' | 'all' = dataRangeMode) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('pass_box_logs')
         .select('*')
         .order('id', { ascending: false });
+
+      if (mode === '30days') {
+        const past30 = new Date();
+        past30.setDate(past30.getDate() - 30);
+        query = query.gte('tanggal', past30.toISOString().split('T')[0]);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.warn('Supabase fetch notice:', error.message);
@@ -192,16 +257,40 @@ export const DataTab: React.FC = () => {
     }
   };
 
+  const handleToggleRangeMode = (newMode: '30days' | 'all') => {
+    if (newMode === dataRangeMode) return;
+    setDataRangeMode(newMode);
+    fetchLogs(newMode);
+  };
+
   useEffect(() => {
-    fetchLogs();
+    fetchLogs('30days');
     fetchPassBoxes();
 
-    // Supabase Realtime Subscriptions
+    // Supabase Realtime Subscriptions (Inkremental: Tanpa re-fetch full database)
     const logsChannel = supabase
       .channel('pass_box_realtime_logs')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pass_box_logs' }, () => {
-        fetchLogs();
-      })
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pass_box_logs' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newRow = payload.new as PassBoxLog;
+            setLogs((prev) => {
+              if (prev.some((item) => item.id === newRow.id)) return prev;
+              return [newRow, ...prev];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedRow = payload.new as PassBoxLog;
+            setLogs((prev) =>
+              prev.map((item) => (item.id === updatedRow.id ? updatedRow : item))
+            );
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = (payload.old as { id: number }).id;
+            setLogs((prev) => prev.filter((item) => item.id !== deletedId));
+          }
+        }
+      )
       .subscribe();
 
     const pbChannel = supabase
@@ -904,7 +993,17 @@ export const DataTab: React.FC = () => {
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div>
               <h2 className="text-sm sm:text-base font-bold text-slate-800">Daftar Data Pass Box</h2>
-              <span className="text-xs text-slate-500">{filteredLogs.length} baris tercatat</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-xs text-slate-500">{filteredLogs.length} baris tercatat</span>
+                <span className="text-slate-300">•</span>
+                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+                  dataRangeMode === '30days'
+                    ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                }`}>
+                  {dataRangeMode === '30days' ? '30 Hari Terakhir' : 'Semua Riwayat'}
+                </span>
+              </div>
             </div>
 
             <div className="flex items-center space-x-2">
@@ -991,23 +1090,53 @@ export const DataTab: React.FC = () => {
               </div>
             </div>
 
-            {/* Date Range Inputs */}
+            {/* Date Range Inputs & Server Query Mode Switcher */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-100">
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <span>Rentang Tanggal:</span>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="h-7 bg-white border border-slate-300 rounded px-2 text-slate-700 text-[11px] focus:outline-none"
-                />
-                <span className="text-slate-400">s/d</span>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="h-7 bg-white border border-slate-300 rounded px-2 text-slate-700 text-[11px] focus:outline-none"
-                />
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Switcher Rentang Data Server */}
+                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleRangeMode('30days')}
+                    className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer ${
+                      dataRangeMode === '30days'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title="Muat data operasional 30 hari terakhir (Pemuatan cepat)"
+                  >
+                    30 Hari
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleRangeMode('all')}
+                    className={`px-2.5 py-1 rounded font-semibold transition cursor-pointer ${
+                      dataRangeMode === 'all'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                    title="Muat seluruh data riwayat dari database"
+                  >
+                    Semua Arsip
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <span className="hidden sm:inline">Filter Tanggal:</span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="h-7 bg-white border border-slate-300 rounded px-2 text-slate-700 text-[11px] focus:outline-none"
+                  />
+                  <span className="text-slate-400">s/d</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="h-7 bg-white border border-slate-300 rounded px-2 text-slate-700 text-[11px] focus:outline-none"
+                  />
+                </div>
               </div>
 
               {(startDate || endDate || filterKategori !== 'ALL' || filterPassBox !== 'ALL' || searchQuery) && (

@@ -42,14 +42,26 @@ export const RekapTab: React.FC = () => {
   const donutChartInstance = useRef<Chart | null>(null);
   const hourlyChartInstance = useRef<Chart | null>(null);
 
-  // Load logs
-  const fetchLogs = async () => {
+  // Load logs dengan batas filter tanggal di level query Supabase (Optimasi Server)
+  const fetchLogs = async (start?: string, end?: string) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      const cleanStart = typeof start === 'string' ? start : startDate;
+      const cleanEnd = typeof end === 'string' ? end : endDate;
+
+      let query = supabase
         .from('pass_box_logs')
         .select('*')
         .order('created_at', { ascending: false });
+
+      if (cleanStart) {
+        query = query.gte('tanggal', cleanStart);
+      }
+      if (cleanEnd) {
+        query = query.lte('tanggal', cleanEnd);
+      }
+
+      const { data, error } = await query;
 
       if (error || !data) {
         const local = localStorage.getItem('local_pass_box_logs');
@@ -72,8 +84,8 @@ export const RekapTab: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchLogs();
-  }, []);
+    fetchLogs(startDate, endDate);
+  }, [startDate, endDate]);
 
   const handleSelectPreset = (selected: PresetFilter) => {
     setPreset(selected);
@@ -477,7 +489,7 @@ export const RekapTab: React.FC = () => {
 
         <div className="flex items-center space-x-2 self-start sm:self-auto">
           <button
-            onClick={fetchLogs}
+            onClick={() => fetchLogs()}
             disabled={loading}
             className="p-2 border border-slate-300 hover:bg-slate-100 rounded-lg text-slate-600 transition"
             title="Segarkan data rekap"

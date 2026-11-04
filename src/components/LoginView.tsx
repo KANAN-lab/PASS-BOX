@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Lock, User, ArrowRight, AlertCircle, Clock } from 'lucide-react';
+import { showWarningAlert } from '../utils/swal';
 
 export const LoginView: React.FC = () => {
   const { login } = useAuth();
@@ -8,6 +9,8 @@ export const LoginView: React.FC = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
   const [sessionNotice, setSessionNotice] = useState<string>(() => {
     const notice = localStorage.getItem('pass_box_session_notice');
     if (notice) {
@@ -19,17 +22,53 @@ export const LoginView: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password) return;
+    const cleanU = username.trim();
+    const cleanP = password.trim();
+
+    if (!cleanU || !cleanP) {
+      const emptyNotice = 'Silakan masukkan username dan password terlebih dahulu.';
+      setErrorMsg(emptyNotice);
+      showWarningAlert('Data Belum Lengkap', emptyNotice);
+      if (!cleanU) {
+        // Fokus username jika kosong
+        return;
+      }
+      passwordInputRef.current?.focus();
+      return;
+    }
 
     setLoading(true);
     setErrorMsg('');
     setSessionNotice('');
 
-    const res = await login(username.trim(), password);
-    if (!res.success) {
-      setErrorMsg(res.error || 'Autentikasi gagal. Silakan periksa kembali akun Anda.');
+    try {
+      const res = await login(cleanU, password);
+      if (!res.success) {
+        const errorText = res.error || 'Username atau password yang Anda masukkan salah. Silakan periksa kembali.';
+        setErrorMsg(errorText);
+        showWarningAlert('Gagal Masuk', errorText);
+        setTimeout(() => {
+          passwordInputRef.current?.select();
+          passwordInputRef.current?.focus();
+        }, 100);
+      }
+    } catch (err: any) {
+      const errText = err?.message || 'Terjadi gangguan koneksi atau server. Silakan coba lagi.';
+      setErrorMsg(errText);
+      showWarningAlert('Gagal Masuk', errText);
+    } finally {
       setLoading(false);
     }
+  };
+
+  const handleUsernameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setUsername(e.target.value);
+    if (errorMsg) setErrorMsg('');
+  };
+
+  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+    if (errorMsg) setErrorMsg('');
   };
 
   return (
@@ -57,10 +96,10 @@ export const LoginView: React.FC = () => {
 
         {/* Error Alert */}
         {errorMsg && (
-          <div className="mb-5 p-3.5 rounded-xl bg-rose-50 text-rose-800 text-xs border border-rose-200 flex items-start space-x-2.5 shadow-sm leading-relaxed animate-fadeIn">
+          <div className="mb-5 p-3.5 rounded-xl bg-rose-50 text-rose-800 text-xs border border-rose-300 flex items-start space-x-2.5 shadow-sm leading-relaxed animate-fadeIn">
             <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
-              <span className="font-bold text-rose-900 block mb-0.5">Informasi Login:</span>
+              <span className="font-bold text-rose-900 block mb-0.5">Peringatan Login:</span>
               <span className="text-rose-700 font-medium block whitespace-pre-line">{errorMsg}</span>
             </div>
           </div>
@@ -80,8 +119,12 @@ export const LoginView: React.FC = () => {
                 autoFocus
                 placeholder="Masukkan username atau email..."
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full pl-10 pr-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition font-medium"
+                onChange={handleUsernameChange}
+                className={`w-full pl-10 pr-3.5 py-2.5 text-sm border rounded-xl focus:outline-none transition font-medium ${
+                  errorMsg 
+                    ? 'border-rose-400 bg-rose-50/20 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-slate-800' 
+                    : 'border-slate-300 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800'
+                }`}
               />
             </div>
           </div>
@@ -93,12 +136,17 @@ export const LoginView: React.FC = () => {
             <div className="relative">
               <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
+                ref={passwordInputRef}
                 type="password"
                 required
                 placeholder="••••••••"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition"
+                onChange={handlePasswordChange}
+                className={`w-full pl-10 pr-3.5 py-2.5 text-sm border rounded-xl focus:outline-none transition ${
+                  errorMsg 
+                    ? 'border-rose-400 bg-rose-50/20 focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 text-slate-800' 
+                    : 'border-slate-300 focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 text-slate-800'
+                }`}
               />
             </div>
           </div>
@@ -106,10 +154,19 @@ export const LoginView: React.FC = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-semibold py-2.5 rounded-xl shadow-md transition disabled:opacity-50 text-sm"
+            className="w-full mt-2 flex items-center justify-center space-x-2 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-semibold py-2.5 rounded-xl shadow-md transition disabled:opacity-50 text-sm cursor-pointer"
           >
-            <span>{loading ? 'Memverifikasi...' : 'Masuk ke Sistem'}</span>
-            <ArrowRight className="w-4 h-4" />
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Memverifikasi Akun...</span>
+              </>
+            ) : (
+              <>
+                <span>Masuk ke Sistem</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
         </form>
 
@@ -122,3 +179,4 @@ export const LoginView: React.FC = () => {
     </div>
   );
 };
+export default LoginView;

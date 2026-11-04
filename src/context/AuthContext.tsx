@@ -227,7 +227,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Login handler
   const login = async (usernameInput: string, passwordInput: string): Promise<{ success: boolean; error?: string }> => {
-    setLoading(true);
     const u = usernameInput.trim().toLowerCase();
     const p = passwordInput.trim();
 
@@ -245,7 +244,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('pass_box_last_active', String(Date.now()));
         localStorage.removeItem('pass_box_session_notice');
         setShowIdleWarning(false);
-        setLoading(false);
         return { success: true };
       }
 
@@ -271,7 +269,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (profileCheck) {
           // Kasus A: Akun ditemukan tetapi password_hash masih 'pending'
           if (profileCheck.password_hash === 'pending') {
-            setLoading(false);
             return {
               success: false,
               error: `Akun "${profileCheck.username}" ditemukan, tetapi password masih berstatus PENDING (belum diaktifkan oleh sistem). Minta Administrator mereset password akun ini di menu Pengguna.`
@@ -280,7 +277,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // Kasus B: Akun berstatus non-aktif
           if (!profileCheck.is_active) {
-            setLoading(false);
             return {
               success: false,
               error: `Akun "${profileCheck.username}" saat ini berstatus NON-AKTIF. Silakan hubungi Administrator untuk mengaktifkannya kembali.`
@@ -289,7 +285,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           // Kasus C: Akun aktif & ada di database, tetapi RPC verify_user_login 404
           if (isRpcMissing) {
-            setLoading(false);
             return {
               success: false,
               error: `Fungsi database "verify_user_login" belum diaktifkan di Supabase (Error 404). Akun "${profileCheck.username}" ada di database, namun RPC login belum dibuat di Supabase SQL Editor.`
@@ -308,13 +303,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('pass_box_last_active', String(Date.now()));
         localStorage.removeItem('pass_box_session_notice');
         setShowIdleWarning(false);
-        setLoading(false);
         return { success: true };
       }
 
       // 4. Jika RPC missing dan bukan akun default
       if (isRpcMissing) {
-        setLoading(false);
         return {
           success: false,
           error: `Error Supabase (404): Fungsi "verify_user_login" tidak ditemukan di database. Buka Supabase SQL Editor dan jalankan file "supabase_setup.sql" atau patch RPC.`
@@ -323,14 +316,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       // 5. Jika ada error spesifik lain dari Supabase
       if (error) {
-        setLoading(false);
         return {
           success: false,
           error: `Gagal verifikasi dari server Supabase: ${error.message || 'Terjadi kesalahan sistem'}`
         };
       }
 
-      setLoading(false);
       return { success: false, error: 'Username atau password yang Anda masukkan salah.' };
     } catch (err: any) {
       // Fallback lokal jika ada gangguan koneksi
@@ -341,11 +332,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.setItem('pass_box_last_active', String(Date.now()));
         localStorage.removeItem('pass_box_session_notice');
         setShowIdleWarning(false);
-        setLoading(false);
         return { success: true };
       }
 
-      setLoading(false);
       return { success: false, error: err.message || 'Gagal melakukan verifikasi akun ke server.' };
     }
   };
