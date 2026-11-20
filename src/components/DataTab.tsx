@@ -3,6 +3,7 @@ import DataTable from 'datatables.net-dt';
 import 'datatables.net-dt/css/dataTables.dataTables.css';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { fetchAllRows } from '../lib/fetchAll';
 import type { PassBoxLog, KategoriPro, PassBoxMaster } from '../types';
 import { StatCard } from './StatCard';
 import { EditLogModal } from './EditLogModal';
@@ -217,18 +218,24 @@ export const DataTab: React.FC = () => {
   const fetchLogs = async (mode: '30days' | 'all' = dataRangeMode) => {
     try {
       setLoading(true);
-      let query = supabase
-        .from('pass_box_logs')
-        .select('*')
-        .order('id', { ascending: false });
+      const since =
+        mode === '30days'
+          ? (() => {
+              const past30 = new Date();
+              past30.setDate(past30.getDate() - 30);
+              return past30.toISOString().split('T')[0];
+            })()
+          : null;
 
-      if (mode === '30days') {
-        const past30 = new Date();
-        past30.setDate(past30.getDate() - 30);
-        query = query.gte('tanggal', past30.toISOString().split('T')[0]);
-      }
-
-      const { data, error } = await query;
+      // Ambil SEMUA baris (melewati limit 1000 Supabase) secara berhalaman & paralel terbatas
+      const { data, error } = await fetchAllRows<PassBoxLog>((from, to) => {
+        let q = supabase
+          .from('pass_box_logs')
+          .select('*', { count: 'exact' })
+          .order('id', { ascending: false });
+        if (since) q = q.gte('tanggal', since);
+        return q.range(from, to);
+      });
 
       if (error) {
         console.warn('Supabase fetch notice:', error.message);

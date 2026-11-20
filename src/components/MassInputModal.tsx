@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { fetchAllRows } from '../lib/fetchAll';
 import { useAuth } from '../context/AuthContext';
 import type { PassBoxLog, KategoriPro, PassBoxMaster } from '../types';
 import { showToast, showWarningAlert, showErrorAlert, showConfirmDialog } from '../utils/swal';
@@ -135,12 +136,26 @@ export const MassInputModal: React.FC<MassInputModalProps> = ({
 
     setCheckingDb(true);
     try {
-      const { data, error } = await supabase
-        .from('pass_box_logs')
-        .select('no_pro, tanggal, pass_box, user_name')
-        .in('no_pro', uniquePros);
+      // Pecah daftar no_pro menjadi potongan kecil (hindari URL terlalu panjang)
+      // dan ambil semua barisnya per potongan (hindari limit 1000 baris).
+      const CHUNK = 150;
+      const data: Array<{ id?: number; no_pro: string; tanggal: string; pass_box: string; user_name: string | null }> = [];
+      let error: { message: string } | null = null;
+      for (let i = 0; i < uniquePros.length && !error; i += CHUNK) {
+        const slice = uniquePros.slice(i, i + CHUNK);
+        const res = await fetchAllRows<(typeof data)[number]>((from, to) =>
+          supabase
+            .from('pass_box_logs')
+            .select('id, no_pro, tanggal, pass_box, user_name', { count: 'exact' })
+            .in('no_pro', slice)
+            .order('id', { ascending: true })
+            .range(from, to)
+        );
+        if (res.error) error = res.error;
+        else data.push(...res.data);
+      }
 
-      if (!error && data) {
+      if (!error) {
         const dbMap = new Map<string, { tanggal: string; pass_box: string; user_name: string }>();
         data.forEach(d => {
           dbMap.set(String(d.no_pro).trim(), {
