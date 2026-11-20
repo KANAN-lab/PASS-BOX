@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { fetchAllRows } from '../lib/fetchAll';
 import type { PassBoxLog, CheckerSummary } from '../types';
 import { StatCard } from './StatCard';
 import { ExportModal } from './ExportModal';
@@ -49,19 +50,17 @@ export const RekapTab: React.FC = () => {
       const cleanStart = typeof start === 'string' ? start : startDate;
       const cleanEnd = typeof end === 'string' ? end : endDate;
 
-      let query = supabase
-        .from('pass_box_logs')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (cleanStart) {
-        query = query.gte('tanggal', cleanStart);
-      }
-      if (cleanEnd) {
-        query = query.lte('tanggal', cleanEnd);
-      }
-
-      const { data, error } = await query;
+      // Ambil SEMUA baris pada rentang tanggal (melewati limit 1000 Supabase).
+      // Urutan memakai id (unik & stabil) agar paginasi tidak menggandakan/melewatkan baris.
+      const { data, error } = await fetchAllRows<PassBoxLog>((from, to) => {
+        let q = supabase
+          .from('pass_box_logs')
+          .select('*', { count: 'exact' })
+          .order('id', { ascending: false });
+        if (cleanStart) q = q.gte('tanggal', cleanStart);
+        if (cleanEnd) q = q.lte('tanggal', cleanEnd);
+        return q.range(from, to);
+      });
 
       if (error || !data) {
         const local = localStorage.getItem('local_pass_box_logs');

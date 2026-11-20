@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { supabase } from '../lib/supabase';
+import { fetchAllRows } from '../lib/fetchAll';
 import type { PassBoxLog, PassBoxMaster, UserProfile } from '../types';
 import { formatDateIndo, formatDateTimeIndo } from './excel';
 
@@ -40,11 +41,14 @@ export interface RestorePreview {
  */
 export async function downloadJSONBackup(currentUserName?: string): Promise<{ success: boolean; count: number; error?: string }> {
   try {
-    // 1. Fetch seluruh logs transaksi
-    const { data: logsData, error: logsError } = await supabase
-      .from('pass_box_logs')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // 1. Fetch seluruh logs transaksi (berhalaman, melewati limit 1000 Supabase)
+    const { data: logsData, error: logsError } = await fetchAllRows<PassBoxLog>((from, to) =>
+      supabase
+        .from('pass_box_logs')
+        .select('*', { count: 'exact' })
+        .order('id', { ascending: false })
+        .range(from, to)
+    );
 
     if (logsError) throw new Error(`Gagal membaca data logs: ${logsError.message}`);
 
@@ -109,10 +113,13 @@ export async function downloadJSONBackup(currentUserName?: string): Promise<{ su
  */
 export async function downloadExcelBackup(): Promise<{ success: boolean; count: number; error?: string }> {
   try {
-    const { data: logsData, error: logsError } = await supabase
-      .from('pass_box_logs')
-      .select('*')
-      .order('created_at', { ascending: false });
+    const { data: logsData, error: logsError } = await fetchAllRows<PassBoxLog>((from, to) =>
+      supabase
+        .from('pass_box_logs')
+        .select('*', { count: 'exact' })
+        .order('id', { ascending: false })
+        .range(from, to)
+    );
 
     if (logsError) throw new Error(`Gagal membaca data logs: ${logsError.message}`);
 
